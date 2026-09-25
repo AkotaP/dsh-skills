@@ -1,0 +1,36 @@
+# dsh-skills
+
+个人自用的 DeepSeek Harness (DSH) skills 集合。每个 skill 是一个独立目录，入口为 `SKILL.md`，由 DSH 的 `skill` 工具按需加载；不依赖外部服务，clone 下来即可用。
+
+## 已收录
+
+| Skill | 说明 | 依赖 |
+| --- | --- | --- |
+| [`dsh-session-log-decode`](dsh-session-log-decode/SKILL.md) | 解码 DSH 会话日志（`session[.vN].jsonl.zstd`，多帧 zstd 拼接）为 JSONL 或可读对话，用于检索、统计与复盘历史会话。 | Node.js ≥ 22（`node:zlib` 自带 zstd），零第三方依赖 |
+
+## 使用
+
+DSH 的 skills 目录默认为 `$DSH_HOME/skills`，`$DSH_HOME` 未设置时即 `~/.dsh/skills`。
+
+```bash
+git clone https://github.com/AkotaP/dsh-skills.git
+cd dsh-skills
+
+# 把需要的 skill 复制/链接进 DSH 的 skills 目录
+cp -r dsh-session-log-decode "$HOME/.dsh/skills/"     # Windows: %USERPROFILE%\.dsh\skills
+```
+
+整仓也可以直接当作 skills 目录使用。加载后按 `SKILL.md` 里的用法调用，例如：
+
+```powershell
+node "$HOME/.dsh/skills/dsh-session-log-decode/scripts/decode-session.mjs" "<会话目录>" --text
+```
+
+## 约定
+
+- 目录结构固定为 `<skill-name>/SKILL.md` + `<skill-name>/scripts/`，新增 skill 保持同样形状即可被自动扫描。
+- 脚本尽量零依赖，随 skill 目录一起走；仓库里不放生成物和缓存。
+
+## 许可
+
+个人自用仓库，未附许可证。需要的话直接取用，风险自负。
