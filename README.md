@@ -7,6 +7,7 @@
 | Skill | 说明 | 依赖 |
 | --- | --- | --- |
 | [`dsh-session-log-decode`](dsh-session-log-decode/SKILL.md) | 解码 DSH 会话日志（`session[.vN].jsonl.zstd`，多帧 zstd 拼接）为 JSONL 或可读对话，用于检索、统计与复盘历史会话。 | Node.js ≥ 22（`node:zlib` 自带 zstd），零第三方依赖 |
+| [`dsh-plugin-development`](dsh-plugin-development/SKILL.md) | 开发/安装/调试 DSH 插件：bundle 清单、宿主半（Node ESM）、客户端 UI 半与槽位、volatile 配置通道、热更新、离线测试。含本机实测的 86 个槽位清单与坑清单。 | Node.js ≥ 20；脚手架零依赖 |
 
 ## 使用
 
@@ -28,7 +29,7 @@ node "$HOME/.dsh/skills/dsh-session-log-decode/scripts/decode-session.mjs" "<会
 
 ## 约定
 
-- 目录结构固定为 `<skill-name>/SKILL.md` + `<skill-name>/scripts/`，新增 skill 保持同样形状即可被自动扫描。
+- 目录结构固定为 `<skill-name>/SKILL.md`；可选 `<skill-name>/scripts/`（零依赖脚本）与 `<skill-name>/references/`（按需加载的细节文档，SKILL.md 里用表格指路）。新增 skill 保持同样形状即可被自动扫描。
 - 脚本尽量零依赖，随 skill 目录一起走；仓库里不放生成物和缓存。
 
 ## 许可
