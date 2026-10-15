@@ -66,7 +66,7 @@ node $S $dir --grep 'file_path' --text       # 只看涉及文件路径的片段
 
 ## 维护
 
-- **唯一真相是本目录的 `scripts/decode-session.mjs`**；仓库 `E:/Data/Project/dsh/dsh-session-log-decode` 里那份只是备份（同步过去，不从这里引用）。
+- **唯一真相是本目录的 `scripts/decode-session.mjs`**；本目录就是技能仓库里的同名目录（skills 根下用目录链接挂进来），不存在第二份副本，不用再去别处找"备份"同步。
 - 改脚本后跑一次冒烟：`--version`、一个真实会话的 `--text`、一个不存在的路径（应 exit 1）、一个错误参数（应 exit 2）。
-- 同步到备份仓库：把本目录的 `scripts/decode-session.mjs` 复制到 `E:/Data/Project/dsh/dsh-session-log-decode/`，两侧 SHA-256 一致才算完成。
+- 发布 = 提交本目录所在的仓库；没有额外的同步步骤。
 - 目录下其他文件（`scripts/`、`references/` 等）不会被扫描成新 skill，改它们也不会触发 skill 目录刷新。
