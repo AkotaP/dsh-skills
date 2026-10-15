@@ -51,6 +51,14 @@ const readme = fs.readFileSync(path.join(pkgsRoot, 'dsh-host-webserver', 'README
 
 在 agent 会话里，`run_code` 内的程序运行于宿主进程，可直接这样读；换成 shell 命令则必然失败。
 
+**读一个包的顺序：`README.md` → `src/`（若有）→ `lib/index.js`。**
+
+- `README.md` 是契约的第一权威（同目录的 `README.zh.md` / `README.i18n.yaml` 同源）。
+- 一部分包随安装**带原始 TS 源码**：cordis 家族（`cordis`、`cordis-plugin-*`、`cosmokit`、`schemastery`）目录下就有 `src/*.ts`（`context.ts` / `fiber.ts` / `registry.ts` / `service.ts`…），读它比啃打包产物省事。`dsh-*` 各包通常只有 `lib/`，且安装内一般**没有 sourcemap**。
+- `lib/index.js` 是实际实现，也是最后手段；个别 build 不含 `lib/types`。
+
+安装目录里还有 asar **之外**的几处，定位能力要一并知道：`resources/<app>.asar.unpacked/`（原生依赖那一半，宿主 `fs` 与 shell 都能读）、`resources/runtime/`（harness 自带的 Node 与 pnpm，旁边的 `versions.json` 记着具体版本号——这就是为什么 shell 里的 `node` 未必等于 harness 运行时那个）。
+
 ## 4. 区分「安装自带」与「profile 安装」
 
 | 来源 | 位置 | 谁能改 |

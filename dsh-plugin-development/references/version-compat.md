@@ -14,6 +14,8 @@ DSH 迭代很快（本 skill 编写时为 `0.1.7-rc.2`，复核时安装已是 `
 
 > 实测：`desktop-runtime.json` 的 `release.version` 与 `@deepseek-ai/dsh` 的 `version` 一致，但各包版本并不统一（cordis `4.0.4`、schemastery `3.18.4`、其余多为发行版本号）。所以"DSH 版本"要区分发行版本与单个包版本。
 
+**想知道"有没有新版、哪天发的"**：安装目录下 updater 的元数据（`resources/` 里，形如 `app-update.yml`）会给出更新源 —— provider / url / channel（`stable`、`nightly` 之类）。按该 url 与 channel 取频道的版本清单文件，能读到**最新版本号、文件名、sha512、releaseDate**。这是安装侧唯一的"版本时间线"。
+
 ## 2. 官方没有随包 CHANGELOG
 
 实测：安装内的 `@deepseek-ai/*` 里**没有** DSH 自己的 CHANGELOG 或 docs 目录（只有若干第三方依赖自带 CHANGELOG）。各包 README 引用的 `docs/config-catalog.md`、`.agents/notes/...` 属于**源码检出**，不随安装分发。
@@ -24,6 +26,8 @@ DSH 迭代很快（本 skill 编写时为 `0.1.7-rc.2`，复核时安装已是 `
 2. **每个包的 README + `lib/index.js`**：README 描述契约，`lib` 是实际实现；两者都在同一个包目录里。
 3. **快照对比**：升级前后各采一次 API 表面，用 `scripts/api-snapshot.mjs` 输出变化清单（见 §3）。
 4. **上游仓库与发布说明**：包的 `package.json` 有 `repository`（上游为 `deepseek-ai/deepseek-harness`）；需要外部信息时用 web 检索发行说明，但**以安装内的实际契约为准**。
+
+> 实测：更新源的版本清单只给 `version / files / path / sha512 / releaseDate`，**没有 `releaseNotes`**；安装里也**一个 CHANGELOG 都没有**。所以"这个版本到底改了什么"在安装侧读不到——只能靠下面的快照 diff（§3）与上游仓库。别花时间去找一份不存在的官方 changelog。
 
 ## 3. 升级前后做 API 快照 diff
 
