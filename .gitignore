@@ -4,3 +4,6 @@ node_modules/
 Thumbs.db
 .idea/
 .vscode/
+
+# scenetool.py 回归测试在工作目录里创建的临时目录
+.scenetool-test-*/
