@@ -1,6 +1,6 @@
 # 版本与兼容（升级前后怎么快速对齐）
 
-DSH 迭代很快（本 skill 编写时为 `0.1.7-rc.2`，复核时安装已是 `0.2.0-rc.2`）。**任何"实测"结论都会随版本漂移**，所以流程比结论重要。
+DSH 迭代很快（本 skill 编写时为 `0.1.7-rc.2`，复核时为 `0.2.0-rc.2`，再复核为 `0.2.1-rc.2`）。**任何"实测"结论都会随版本漂移**，所以流程比结论重要——尤其注意 `0.2.1` 起 `engines.dsh` 会被真实检查（§5）。
 
 ## 1. 先读出版本（不要凭记忆）
 
@@ -54,10 +54,50 @@ diff 输出四类变化：**版本变化、新增槽位、消失槽位、新增/
 - **样式只依赖主题 token**：token 改名最多让外观退化，不会让渲染崩掉。
 - **不要依赖未公开的 DOM/内部字段**：这类耦合在小版本升级里最容易断。
 
-## 5. 声明与锁定
+## 5. 声明宿主版本：会被真实检查（不是纯声明）
 
-- `package.json` 的 `engines.dsh`（SemVer 范围）与 `dsh.manifestVersion` 是**纯声明**：当前安装器与加载器**不会**据此拒绝不兼容的宿主，也不会校验语法。写它主要给人和工具看，别当成运行时保险。
-- DSH 包按生态惯例放 `peerDependencies`，非必需的用 `peerDependenciesMeta.optional` 标记；宿主半真正 `import` 的第三方库才进 `dependencies`（见 `install-and-devloop.md`）。
+**插件可以在 `package.json` 里声明自己支持的 DSH 版本——DSH 会读它，不满足就禁用插件或拒绝安装。** 判定在 `@deepseek-ai/dsh-app-boot` 的 `plugin-compatibility` 模块里（`evaluatePluginCompatibility`，只读 manifest、不执行插件代码）：
+
+1. 写了 `engines.dsh`（SemVer 范围）→ **只看它**，`peerDependencies` 被忽略；
+2. 没写 `engines.dsh` → 回退检查 `peerDependencies` 中所有 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 的范围；
+3. 比较用 `semver.satisfies(runtime, range, { includePrerelease: true })`，prerelease 参与；
+4. `engines.dsh` 的 `workspace:` 范围视为不满足；peer 的 `workspace:^/~/*` 视为当前运行时；空/非法范围不满足。
+
+不满足的后果（`0.2.1-rc.2` 实测）：
+
+| 时机 | 行为 |
+|---|---|
+| 启动加载 profile | 逐条目 preflight → `row.disabled = true`，stderr：`dsh: disabling profile plugin <id>: Plugin <pkg@ver> is incompatible with dsh <ver>: requirements {...}` |
+| profile bundle 层 | bundle 的 package.json 不兼容 → 整个 bundle 跳过（`skippedBundles`） |
+| 安装 | `dsh-plugin-manager` 在 pnpm 前预检：直接拒绝（`incompatible-version`，`nothing was installed`）；装完复查不兼容会回滚 |
+| 已装但未改动的包 | 保持安装，但启动时被禁用，等豁免或卸载 |
+| 插件市场/管理器 UI | 标出 incompatible，错误码带具体 requirement 与补救 |
+
+**版本差异（关键，别记反）**：
+
+- `0.2.0-rc.2`：**只检查 `peerDependencies`** 里的 `@deepseek-ai/dsh*`，完全不读 `engines.dsh`（实测 `engines.dsh: ">=9"` 仍判兼容）。
+- `0.2.1-rc.2`：`engines.dsh` 优先生效，peer 只作回退。所以只在 peer 里声明的插件在新宿主上仍有效；只写 `engines.dsh` 的插件在旧宿主上等于没声明。
+
+**反制：精确版本豁免**（明知风险也要跑时）：
+
+- 记录在 profile 目录的 `compatibility.json`：`{ "包名@精确版本": ["精确 dsh 版本", ...] }`
+- 授予：`dsh plugin allow-version <pkg@version> --dsh-version <exact> --accept-risk`，或插件管理器；撤销 `dsh plugin revoke-version`；查看 `dsh plugin version-exemptions`
+- 只对精确 `name@version` + 精确宿主版本生效；豁免后允许运行，但警告可能崩溃或数据丢失
+
+**自测自己的 manifest**（宿主进程内，用 `run_code`；`pkgsRoot` 按 `paths.md` §2 定位）：
+
+```js
+const { evaluatePluginCompatibility } = await import(
+  pathToFileURL(join(pkgsRoot, "dsh-app-boot", "lib", "index.js")).href,
+)
+evaluatePluginCompatibility(JSON.parse(readFileSync("<插件目录>/package.json", "utf8")))
+// undefined = 兼容；否则返回 { name, version, runtimeVersion, requirements, exempted }
+```
+
+**写法建议**：想同时兼容 `0.2.0` 与 `0.2.1+`，两个都写——`engines.dsh` 给新宿主、`peerDependencies["@deepseek-ai/dsh"]` 留同范围给旧宿主。只支持 `0.2.1+` 时写 `engines.dsh` 就够。声明错版本会让插件在用户机器上直接消失，这比 API 漂移更常见。
+
+- `dsh.manifestVersion` 在当前安装（`0.2.1-rc.2`）里全量检索不到任何读取逻辑，**不要依赖它**。
+- DSH 包在 `peerDependencies` 里还有生态含义：非必需的用 `peerDependenciesMeta.optional` 标记；宿主半真正 `import` 的第三方库才进 `dependencies`（见 `install-and-devloop.md`）。
 - 插件要"锁定"某个 API 时，靠的是**自己的测试**和**快照 diff**，而不是版本号声明。
 
 ## 6. 升级后的回归清单
@@ -68,3 +108,4 @@ diff 输出四类变化：**版本变化、新增槽位、消失槽位、新增/
 4. 验证 volatile 配置通道仍能投影与写入（`config-channel.md`）。
 5. UI：让用户刷新页面确认；没有浏览器控制工具时**不要**声称界面正常。
 6. 把新的实测结论与版本号一起写进插件文档，**不要只写"改了什么"**。
+7. 核对 `engines.dsh` / `@deepseek-ai/dsh*` peer 与目标宿主版本（见 §5）——声明错版本会让插件在安装或启动时被直接禁用。

@@ -8,7 +8,7 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 
 本 skill 补官方 `cordis-plugin-development` 的缺口：**官方流程假定 creator mode 工具存在**（`plugin_manager`、`cordis_inspect_*`），但 `ptc`/`standard` preset 并不挂载它们；官方文档中另有若干条命令在 Desktop profile 下实测不可用。
 
-> **版本敏感**：本 skill 编写基线为 DSH `0.1.7-rc.2`；复核安装时已是 **`0.2.0-rc.2`**（客户端槽位 85 → 86，参考插件 30 条离线测试仍全绿）。下文标「实测」的结论都绑定具体版本，**升级后用 `references/version-compat.md` 重新核对，不要照搬**。
+> **版本敏感**：本 skill 编写基线为 DSH `0.1.7-rc.2`；复核时安装为 `0.2.0-rc.2`，再复核为 **`0.2.1-rc.2`**（客户端槽位 85 → 86，参考插件 30 条离线测试仍全绿）。**`0.2.1` 起 `engines.dsh` 会被真实校验，不满足会禁用插件**（见 `references/version-compat.md` §5）。下文标「实测」的结论都绑定具体版本，**升级后用 `references/version-compat.md` 重新核对，不要照搬**。
 
 ## 0. 先分清四条路
 
@@ -23,7 +23,7 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 
 ## 1. 事实基线（实测）
 
-- 版本不是常量：按 `references/version-compat.md` §1 读当前安装的 `desktop-runtime.json` 与各包 `package.json`（复核时为 DSH `0.2.0-rc.2`、cordis `4.0.4`、schemastery `3.18.4`、Node `v24.18.1`）。
+- 版本不是常量：按 `references/version-compat.md` §1 读当前安装的 `desktop-runtime.json` 与各包 `package.json`（再复核时为 DSH `0.2.1-rc.2`、cordis `4.0.5`、schemastery `3.18.5`、Node `v24.21.0`）。
 - shell 中会注入 `DSH_HOME`（数据根目录，默认 `~/.dsh`）、`DSH_PROFILE`（当前 profile 名）、`DSH_PROFILE_DIR`（该 profile 目录）；未设置表示 harness 未以 profile 启动。通用取值方式见 `references/paths.md`。
 - **`dsh --profile desktop --dump-config` 在 Desktop profile 下失败**：`error: profile "desktop" is managed exclusively by the Electron application`。查看合成配置需改用 §5 的方式。
 - 官方包与安装同处一个 asar 归档，**位置随安装目录变化**，不要写死。**只有宿主进程自身的 `fs` 能读取**（例如 `run_code` 里的 `node:fs`）；`rg`/`glob`/`pwsh` 的 `ls`/`cat` 均报 `ENOENT`。定位方式与读取示例见 `references/paths.md`。查 API 优先读包目录下的 `README.md`，其次 `lib/index.js`（部分 build 不含 `lib/types`）。
@@ -54,12 +54,15 @@ my-plugin/
   "private": true,
   "type": "module",
   "exports": { ".": "./index.js", "./client": "./client.js" },
+  "engines": { "node": ">=20", "dsh": ">=0.2.1-rc.2" },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-conversation"] }
   }
 }
 ```
+
+`engines.dsh` 会被 DSH 真实检查（`0.2.1+` 优先，`0.2.0` 只查 `@deepseek-ai/dsh*` peer），不满足会禁用插件、拒绝安装；要兼容 `0.2.0` 旧宿主就在 `peerDependencies` 里再写同范围的 `@deepseek-ai/dsh`。详见 `references/version-compat.md` §5。
 
 `cordis.patch.yml`（行 id 必须与客户端 `configForms.get(id)` 一致）：
 
@@ -144,6 +147,7 @@ window.__ModuleLoader__.load({
 | 官方包的 API | asar 路径下该包的 `README.md`（第一权威），其次 `lib/index.js` |
 | 官方 skill 全文 | `.../dsh-agent-preset/skills/cordis-plugin-development/`（用宿主进程的 `fs` 读，不要用 shell） |
 | 切换 creator mode | 改 `agent-preset-registry` 的 `selectedDefault`，或在新建会话时选择 `cordis` preset——它会挂载 `@deepseek-ai/dsh-tool-cordis` + `@deepseek-ai/dsh-plugin-manager/tools` |
+| 插件被禁用 / 安装被拒（版本不兼容） | stderr 的 `disabling profile plugin`、`dsh plugin version-exemptions`、profile 目录的 `compatibility.json`（见 `version-compat.md` §5） |
 
 ## 6. 可直接参照的样例
 
@@ -171,7 +175,7 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 // node scripts/api-snapshot.mjs --diff before.json
 ```
 
-输出会列出**包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的三类依赖。完整流程（版本从哪读、官方有无 CHANGELOG、兼容写法、升级后回归清单）见 `references/version-compat.md`。
+输出会列出**包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的三类依赖。完整流程（版本从哪读、官方有无 CHANGELOG、兼容写法、升级后回归清单）见 `references/version-compat.md`。插件声明的宿主版本（`engines.dsh` / peer）从 `0.2.1` 起会被真实检查，升级后先核对 `version-compat.md` §5。
 
 ## Read next
 
@@ -184,7 +188,7 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 | volatile 配置通道：宿主 schema + 客户端 configForms 读写与报错 | `references/config-channel.md` |
 | 两条安装路线、依赖解析不对称、HMR、重启、发版、回滚 | `references/install-and-devloop.md` |
 | 离线测试 harness 的写法、断言范围、沙箱下的跑法 | `references/testing.md` |
-| 坑清单（22 条，全部来自实测或真实故障） | `references/pitfalls.md` |
-| 版本怎么读、升级前后怎么对齐（快照 diff、回归清单、兼容写法） | `references/version-compat.md` |
+| 坑清单（23 条，全部来自实测或真实故障） | `references/pitfalls.md` |
+| 版本怎么读、插件声明的宿主版本如何被检查/豁免、升级前后怎么对齐 | `references/version-compat.md` |
 | 生成最小插件骨架 | `scripts/scaffold-plugin.mjs` |
 | 采集/对比 API 表面（版本、槽位、服务） | `scripts/api-snapshot.mjs` |

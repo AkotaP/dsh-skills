@@ -90,6 +90,6 @@ export const Config = z.object({
 | 宿主半 | Node 原生 ESM：裸包名**只沿模块自己所在目录往上找** | 要 `import` 的包必须写进 `dependencies` 并装进**插件自己的 node_modules**；`@deepseek-ai/*` **不会**从 app.asar 里"顺便"解析到 |
 | 客户端半 | DSH 自己的浏览器模块表（`__ModuleLoader__`） | 只要包名写进 `package.json` 的 `dsh.client.inject`，**不需要安装** |
 
-生态惯例：`dependencies` 只放宿主真 `import` 的包；`peerDependencies` 留 `@deepseek-ai/cordis`，其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`（只为类型/文档）；`engines.dsh` 写成 `">=0.1.7-rc.2"` 这种生态同款。
+生态惯例：`dependencies` 只放宿主真 `import` 的包；`peerDependencies` 留 `@deepseek-ai/cordis`，其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`（只为类型/文档）；**宿主版本写 `engines.dsh`——DSH 会真实检查，不满足会禁用插件或拒绝安装（`version-compat.md` §5）**。
 
 **最常见的整体故障**：宿主半 import 了一个没装进自己 node_modules 的 `@deepseek-ai/*` → `ERR_MODULE_NOT_FOUND` → **整个插件不加载**（UI 什么都不出现，且没有明显报错）。

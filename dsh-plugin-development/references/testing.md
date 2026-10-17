@@ -20,7 +20,7 @@
 | 交互流 | 点选 → 弹窗 → 调 `POST /api/...` → 刷新；失败路径 |
 | 宿主 API | 运行中会话 409；非 loopback 403；缺参 400；未知 method 404；**已下线的旧接口保持 404**（防止有人把旧通道偷偷加回来） |
 | 配置通道 | 字段都是 `volatile`；投影/写入；客户端一次 `set` 一次；失败出红字；缺服务不崩 |
-| 清单 | `package.json` 的 `dsh.client.inject`、依赖钉版本没被改坏；客户端 `configForms.get(id)` 的 id **等于** `cordis.patch.yml` 的行 id |
+| 清单 | `package.json` 的 `dsh.client.inject`、依赖钉版本没被改坏；客户端 `configForms.get(id)` 的 id **等于** `cordis.patch.yml` 的行 id；`engines.dsh` / `@deepseek-ai/dsh*` peer 能通过宿主兼容性判定（`version-compat.md` §5 有自测片段） |
 | 纯逻辑 | 路径绝对化、工具调用统计去重、树形折叠层级、时间格式化…这些不需要渲染就能测，优先写成纯函数 |
 
 **新 slot / 新接口 / 新配置字段 = 先加断言再改实现。** 否则"改完看着没问题"只能靠肉眼。

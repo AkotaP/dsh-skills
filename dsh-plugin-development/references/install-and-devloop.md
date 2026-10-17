@@ -8,7 +8,7 @@
 
 1. 在工作区写好 bundle 目录（`package.json` + `cordis.patch.yml` + 代码）。
 2. `plugin_manager` `action: install_bundle`，`target` 给**绝对目录**。它会代为装包、选择 bundle 并写入 profile。
-3. 读返回的 `application` / `warnings` 判断是否真的生效，别靠日志猜。`overridden` = 被更高优先级层盖住；`restart-required` = 还没生效。
+3. 读返回的 `application` / `warnings` 判断是否真的生效，别靠日志猜。`overridden` = 被更高优先级层盖住；`restart-required` = 还没生效；`incompatible-version` = 插件声明的宿主版本与运行时不符（安装被拒，见 `version-compat.md` §5）。
 4. 需要构建脚本的包，只有在**用户明确同意**后才传 `approvedBuilds`。
 
 不要手改 profile 的 `package.json`/`cordis.patch.yml`，也不要手跑 pnpm——`install_bundle` 会做，而且手改每一处都要单独审批。
@@ -36,6 +36,7 @@ $repo       = "<插件仓库绝对路径>"
    注意 patch 语义：**带 `id` 而无 `insert` 是覆盖**，且 `config` 是**整体替换不是深合并**——覆盖官方行时要把该行需要的字段全部重写。无 `id` 的覆盖会被警告并跳过。
 4. **重启 DSH**（宿主半才会加载）。重启会打断正在跑的会话 → **需先经用户确认**。
 5. 验证：设置 → 插件页出现条目；宿主路由可直接 curl；涉及 UI 时由用户刷新页面确认。
+   若插件页显示**禁用**或 stderr 出现 `disabling profile plugin`，先核对 `engines.dsh`/peer 与当前 DSH 版本（`version-compat.md` §5）；不要用改版本号硬过，优先升级插件或走精确版本豁免。
 
 **回滚**：删 patch 条目 → 从 `dsh.profile.bundles` 移除 → `pnpm remove <pkg>` → 重启。
 
@@ -48,9 +49,9 @@ $repo       = "<插件仓库绝对路径>"
 
 - `dsh-app-boot` 的 `bareModuleBaseUrl` 只特判 **cordis 条目名**从哪加载，**不管条目内部的 import**。
 - 链接安装下，仓库里的 `node_modules` 就是宿主解析用的那份；所以 `pnpm install` 要在**插件仓库**里也跑一次。
-- `engines.dsh` 与 `dsh.manifestVersion` 只是**声明**：当前安装器与加载器不会据此拒绝不兼容的宿主（见 `version-compat.md` §5），别当运行时保险。
+- **`engines.dsh` / `@deepseek-ai/dsh*` peer 不是纯声明**：DSH `0.2.x` 会真实检查（`0.2.1+` 以 `engines.dsh` 优先，`0.2.0` 只查 peer），不满足时**安装被拒、启动时插件被禁用**。写法、版本差异与豁免见 `version-compat.md` §5。
 
-生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；`engines.dsh` 用 `">=0.1.7-rc.2"` 这种范围。
+生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；**宿主版本声明用 `engines.dsh`（`0.2.1+` 优先）并在 `peerDependencies["@deepseek-ai/dsh"]` 留同范围作 `0.2.0` 旧宿主回退**。
 
 ## 开发循环：改哪半、怎么生效
 

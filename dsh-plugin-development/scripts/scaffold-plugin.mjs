@@ -48,6 +48,7 @@ mkdirSync(target, { recursive: true })
 const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 
 const files = {
+  // 宿主版本声明会被 DSH 真实校验（0.2.1+ 以 engines.dsh 为准，peer 同范围回退旧宿主）；改版本时两处一起改。
   'package.json': JSON.stringify({
     name: pkgName,
     version: '0.1.0',
@@ -55,13 +56,13 @@ const files = {
     type: 'module',
     description: label + ' — DSH plugin',
     exports: { '.': './index.js', './client': './client.js', './package.json': './package.json' },
-    engines: { node: '>=20', dsh: '>=0.1.7-rc.2' },
+    engines: { node: '>=20', dsh: '>=0.2.1-rc.2' },
     scripts: { test: 'node --test --test-isolation=none' },
     dsh: {
       bundle: { patch: './cordis.patch.yml' },
       client: { platform: 'web', immediately: true, inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
     },
-    peerDependencies: { '@deepseek-ai/cordis': '^4.0.1' },
+    peerDependencies: { '@deepseek-ai/dsh': '>=0.2.1-rc.2', '@deepseek-ai/cordis': '^4.0.5' },
   }, null, 2) + '\n',
 
   'cordis.patch.yml':
