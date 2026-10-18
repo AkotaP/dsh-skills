@@ -17,6 +17,8 @@ export default class MyService extends Service { /* ... */ }
 
 `apply(ctx, config)` 的 `config` 是 `cordis.patch.yml` 该条目的 `config`（声明了 `Config` 时按 schema 校验并填默认值）。
 
+**这是读配置的唯一正路。** `ctx.config` 在 handler、事件回调、定时器里读会抛 `cannot get property "config" without inject`——cordis 的上下文代理需要当前 fiber。请求期需要配置就在 `apply` 里把 `config.<volatileKey>` 这个引用缓存下来（值本身 live，`ref.get()` 始终是最新的）；缓存引用而不是快照，否则热更后的配置读不到。
+
 - `name` 只是包内标识；**Loader 行 id 只由 `cordis.patch.yml` 的 `id` 决定**，客户端 `configForms.get(id)` 用的是**行 id**。
 - `inject` 是**必需依赖**：服务缺失会**阻塞插件启动**。
 - `ctx.get(name)` 是**宽容读取**：有则用、无则降级。可选能力（例如 `agentLoop`）故意不进 `inject`，缺失时走降级路径，而不是让整个插件不激活。
@@ -60,6 +62,8 @@ ctx.effect(() => ctx.get('webServer')?.register({
 
 `register` 返回 disposer；匹配顺序：**exact 全表 → 最长 prefix → fallback**。handler 抛异常会被 webserver 记 warning 并以 400 收尾（不崩进程）。
 
+**诊断推论**：没注册的路径会落到 fallback（在需要认证的部署里表现为 **401**），所以 `curl` 自己的插件路由拿到 **400 基本等价于"路由已注册，但 handler 抛错了"**，不要往"认证失败"或"注册没成功"上猜。排错时先把 handler 包进 try/catch 并把 `error.message` 写进响应体——这比翻日志快，Desktop 安装下宿主日志根本不落盘。
+
 路由纪律建议照抄下列做法：
 
 - **只允许 loopback**：自己校验请求的 Host / Origin，非 loopback 一律 403（宿主内部有同类围栏，但不在包的导出面里，不要指望能 import）。放宽前先想清楚后果：`--host 0.0.0.0` 时本插件的接口即对外可达。
@@ -80,9 +84,10 @@ export const Config = z.object({
 })
 ```
 
-- `.volatile()` 是 **DSH 对 schemastery 的补丁**，只在 `@deepseek-ai/schemastery >= 3.18.3`（当前 3.18.4）里有；**npm 上游裸 `schemastery` 和 3.18.2 都没有**。所以包里要钉 `"@deepseek-ai/schemastery": "^3.18.4"` 到 `dependencies`，并确保它真被装进**插件自己的 `node_modules`**。
+- `.volatile()` 是 **DSH 对 schemastery 的补丁**，只在 `@deepseek-ai/schemastery >= 3.18.3`（当前 3.18.5）里有；**npm 上游裸 `schemastery` 和 3.18.2 都没有**。所以包里要钉 `"@deepseek-ai/schemastery": "^3.18.4"` 到 `dependencies`，并确保它真被装进**插件自己的 `node_modules`**。
 - 不标 `.volatile()` → 该字段**连 settings 文档都进不去**，写入直接被拒（`Plugin entry "…" has no volatile fields`）。
 - 非开关类状态（比如"上次勾选了啥"）**别塞 Config**：那属于会话/浏览器状态，应放浏览器 `localStorage`。详见 `config-channel.md`。
+- 一个 `.volatile()` 对象里可以放**任意嵌套结构**（数组、对象、对象数组）：`volatileForm` 会把它整块投影给客户端，`form.set('<key>', 整个对象)` 就是一次合法写入；落盘时 `mergeLayers` 对普通对象深合并、**对数组整体替换**（所以删掉数组里一项能正确生效）。
 
 ## 依赖解析：宿主半和客户端半边规则完全不同
 

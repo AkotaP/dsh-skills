@@ -26,7 +26,12 @@ $repo       = "<插件仓库绝对路径>"
 
 1. **profile `package.json`**：`dependencies` 加 `"<pkg>": "link:$repo"`（开发期）或版本号（已发 npm）；`dsh.profile.bundles` 数组加 `"<pkg>"`。
 2. **装 link**：在 `$profileDir` 跑 `pnpm install`。结果应是 `$profileDir\node_modules\<pkg>` 指向仓库（junction/symlink）。**仓库改了就是运行版改了，不存在第二份副本。**
-3. **profile `cordis.patch.yml`** 加条目：
+   失败时先看原因：`ERR_PNPM_NO_MATCHING_VERSION` 之类**往往是与你无关的依赖**（实测 `@dsh-ops/bash-win32-x64@0.2.1` 镜像上没有）。这种 install 会整盘失败，**你的 link 也没建出来**——降级为手工建同形链接：
+   ```powershell
+   New-Item -ItemType Junction -Path "$profileDir\node_modules\@local\my-plugin" -Target $repo
+   ```
+   代价：lockfile 里没有这条记录，下次 install 成功会按 `package.json` 重建，一直失败则 junction 继续可用。
+3. **profile `cordis.patch.yml`** 加条目（**仅当包没有自带 `dsh.bundle.patch`，或要覆盖某行 `config` 时**；包内 patch 已 insert 的话这里再加就是重复 id）：
    ```yaml
    - insert:
        - id: my-plugin
@@ -34,7 +39,7 @@ $repo       = "<插件仓库绝对路径>"
          config: {}
    ```
    注意 patch 语义：**带 `id` 而无 `insert` 是覆盖**，且 `config` 是**整体替换不是深合并**——覆盖官方行时要把该行需要的字段全部重写。无 `id` 的覆盖会被警告并跳过。
-4. **等热重组**：patch 文件与 profile `package.json` 都在 HMR 的监视列表里（`dsh-hmr` `lib/index.js` 的 `watchConfig(profile.patchPath)`、`watchConfig(join(profile.home, PROFILE_PATCH_FILENAME))`、`watchConfig('<profile>/package.json')`），写入后宿主半当场 import 并 apply。**先 `pnpm install` 再写 bundles/patch**；包缺失导致的 import 失败会记为 `failed`，下一次重组时自动重试（改动 patch 内容或再写一次 bundles 列表即可触发）。
+4. **等热重组**：patch 文件与 profile `package.json` 都在 HMR 的监视列表里（`dsh-hmr` `lib/index.js` 的 `watchConfig(profile.patchPath)`、`watchConfig(join(profile.home, PROFILE_PATCH_FILENAME))`、`watchConfig('<profile>/package.json')`），写入后宿主半当场 import 并 apply。**比对的是内容**（`refresh()` 里 `inputs === lastInputs` 直接 return），`touch`/改 mtime 不触发。**先 `pnpm install` 再写 bundles/patch**；包缺失导致的 import 失败会记为 `failed`，下一次重组时自动重试（改动 patch 内容或再写一次 bundles 列表即可触发）。
 5. 验证：设置 → 插件页出现条目；宿主路由可直接 curl；涉及 UI 时按页面实际表现确认，必要时由用户刷新。
    若插件页显示**禁用**或 stderr 出现 `disabling profile plugin`，先核对 `engines.dsh`/peer 与当前 DSH 版本（`version-compat.md` §5）；不要用改版本号硬过，优先升级插件或走精确版本豁免。
 
@@ -58,7 +63,7 @@ $repo       = "<插件仓库绝对路径>"
 | 改了 | 生效方式 |
 |---|---|
 | `lib/client.js`（客户端半） | `dsh-client-hmr` 轮询入口产物（默认 `pollIntervalMs: 500`）发现 mtime/ctime/size 变化 → 重载该插件 bundle，**页面不用手动刷新**。React 状态会丢，数据层（会话/连接）保留。失败**不回滚**，会出现在插件列表里可重试。 |
-| `lib/index.js`（宿主半，`0.2.1-alpha.3+`） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入变化——保存 profile patch、改 bundles 列表、插件页开关/安装。**不需要重启，也不需要额外挂 `dsh-hmr`**。 |
+| `lib/index.js`（宿主半，`0.2.1-alpha.3+`） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入**内容**变化——改 profile patch 的内容（不是 touch）、改 bundles 列表、插件页开关/安装。**不需要重启，也不需要额外挂 `dsh-hmr`**。 |
 | `lib/index.js`（宿主半，`0.1.6-alpha.2` – `0.2.1-alpha.2`） | 只做**配置层**重组（`reconcileProfilePatches`），不发布新的运行时解析、已加载模块不比较不替换 → 改 `config`、开关已有插件行即时生效；**装新包、改已加载插件的代码**要重启。 |
 | `cordis.patch.yml` 的 `config` | 保存即热重组（HMR 默认开）；设置页写入同样即时。 |
 | 源码检出（`packages/*`） | `pnpm run dev:web` 同时起宿主 + 重建 watcher；`--no-serve` 只挂 watcher 到别处起的宿主。 |

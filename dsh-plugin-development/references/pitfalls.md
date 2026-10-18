@@ -17,7 +17,7 @@
 8. **样式"只插一次"**（先查 head 里有没有再插）→ 热更后旧 `<style>` 还在，新 CSS 永远不生效，改颜色看着像没做。正确做法：**每次加载先删同名旧标签再插**。
 9. **弹窗挂在会卸载的容器里**（比如「…」菜单内部）→ `setMenuOpen(false)` 与 `setOpen(true)` 同批处理后一起消失，表现为**"点了没反应"**。弹窗放 `shell.overlay`。
 10. **`dsh-client-hmr` 重载会清掉旧 fiber 的样式、且失败不回滚** → 不要依赖"上次注入的东西还在"；重载后新 bundle 必须能自己重建全部资源。
-11. **改完宿主半没观测到重组结果就宣称生效** → 假报告。`0.2.1+` 的重组会替换已加载模块，但触发点是监视输入（patch 内容、`dsh.profile.bundles` 列表、插件页操作），**改文件本身默认不触发**（`root: []`）。以前的坑是"忘了重启"，现在是"以为文件改完就自动生效"——两者都是没看状态就下结论。
+11. **改完宿主半没观测到重组结果就宣称生效** → 假报告。`0.2.1+` 的重组会替换已加载模块，但触发点是监视输入（patch 内容、`dsh.profile.bundles` 列表、插件页操作），**改文件本身默认不触发**（`root: []`）。`refresh()` 比对的是 `[bundles 列表, patch 文件内容]` 这串字符串：**只改 mtime / `touch` 无效**，必须真的改内容。以前的坑是"忘了重启"，现在是"以为文件改完就自动生效"——两者都是没看状态就下结论。
 
 ## 权限与状态
 
@@ -40,3 +40,12 @@
 22. **把「实测」结论当成跨版本真理** → harness 升级会改 API：`0.1.7-rc.2` → `0.2.0-rc.2` 就新增了槽位、Node 从 24.15 升到 24.18；`0.2.1-rc.2` 又把 `engines.dsh` 纳入真实校验。升级后先跑 `scripts/api-snapshot.mjs --diff` 再跑插件测试，别凭记忆断言。
 23. **`lib/client.js` 是构建产物**（CRLF、超长 CSS 字符串、类名映射）——用工具改，别手抄；改完必须过语法检查 + harness。
 24. **手工 `pnpm add` 之后没改 `dsh.profile.bundles`** → 包装进 `node_modules` 了，但 HMR 只在**有序 bundles 列表**变化时才重组（纯依赖变更不触发），表现为"装了却到处找不着"，要等下一次重组或重启。走 Plugin Manager 安装时它自己写列表并触发重组，没有这个问题。
+
+## 本次实测补充（2026-10，DSH `0.2.1-rc.2`）
+
+25. **在 handler / 事件回调 / 定时器里读 `ctx.config`** → `cannot get property "config" without inject`。配置只能从 `apply(ctx, config)` 第二参数拿；需要请求期访问就把 volatile 引用在 `apply` 时缓存下来。
+26. **自己的插件路由返回裸 400 就怀疑认证** → 想多了。未注册路径会走 fallback（认证部署里是 401），**400 基本等于 handler 抛错**。先把 handler 包 try/catch 并把错误写进响应体。
+27. **profile 里 `pnpm install` 被无关依赖卡死** → 实测 `@dsh-ops/bash-win32-x64@0.2.1` 镜像上不存在，导致整个 install 失败、**要装的 link 也没建出来**。降级：`New-Item -ItemType Junction` 手工建等价链接（与 pnpm 同形）；代价是 lockfile 里没记录。
+28. **包内 `cordis.patch.yml` 已经 `insert` 了，又在 profile 的 `cordis.patch.yml` 里再 insert 一次** → 同一个 id 重复。bundles 路线（包里带 `dsh.bundle.patch`）**只需要把包列进 `dsh.profile.bundles`**；profile patch 只在"没有包内 patch"或"要覆盖某行 config"时才写。
+29. **`node --test --test-isolation=none test/` 传目录** → `ERR_UNSUPPORTED_DIR_IMPORT`。别给路径参数，让 Node 自己发现；同理 `scripts.test` 里也别带。
+30. **把组件的初始状态放在 `useEffect` 里初始化** → 离线 harness 的迷你 React 不跑 effect，冒烟测试覆盖不到那段逻辑（本次预览区就是这么漏的）。初始值用惰性 `useState(() => ...)`，副作用才放 effect。

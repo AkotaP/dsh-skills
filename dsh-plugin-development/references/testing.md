@@ -7,7 +7,7 @@
 一块**桩模块图 + 迷你 React**：
 
 - `globalThis.window = { __ModuleLoader__: { load({ id, factory }) { ... } } }`：捕获客户端 bundle，提供一个 `require`，把 `react`、`react/jsx-runtime`、`@deepseek-ai/dsh-client-ui-primitives` 换成自己的桩。
-- **迷你 React**：`useState/useEffect/useRef/useMemo/useSyncExternalStore` 的槽位实现 + 一个"渲染一次组件树"的小 renderer，用来断言注册进槽位的组件结构与文案。
+- **迷你 React**：`useState/useEffect/useRef/useMemo/useSyncExternalStore` 的槽位实现 + 一个"渲染一次组件树"的小 renderer，用来断言注册进槽位的组件结构与文案。它**不跑 effect**（也不做重渲染），所以组件的初始状态要用惰性 `useState(() => ...)` 初始化——写在 `useEffect` 里的初始值在测试里永远是 `undefined`，冒烟测试会漏掉整段逻辑。
 - **假 ctx**：`slots`（记录 `inject`/`register` 调用）、`locale`（记录字典、`bind` 返回查表函数）、`configForms`（抄一份 `dsh-settings` 的投影/写入逻辑）、`get()`。
 - **定时器策略（关键）**：`setInterval`/`clearInterval` 变 no-op——组件里那个 60s 刷新计时器在测试中永不停，否则 `node --test` **永不退出**；`setTimeout` 保持真实，因为要断言"保存成功的绿字会淡出"。
 - `globalThis.fetch` / 路由桩：宿主半的路由测试直接调注册进来的 handler，造 `req/res` 假对象。
@@ -37,4 +37,5 @@ node --test --test-isolation=none  # 沙箱环境下必须加这个
 - **沙箱下默认会失败**：`node --test` 每个文件 spawn 子进程并用管道读写，DSH 沙箱禁止命名管道 → `Error: spawn EPERM`（实测，errno -4048）。`--test-isolation=none` 改为进程内执行即通过（实测）。
 - **这里跑的是 shell 里的 `node`**，未必等于 harness 内置 runtime 的 Node（后者从 runtime 清单的 `nodeVersion` 读）。`--test-isolation` 需要较新的 Node，若报 unknown option，先对一下 `node --version`。
 - Windows 上 `pnpm test` 若只是 `node --test`，在沙箱里同样要加参数——可以直接写进 `scripts.test`。
+- **别给它路径参数**：`node --test --test-isolation=none test/` 会报 `ERR_UNSUPPORTED_DIR_IMPORT`（Node 把目录当模块解析）。让它自己发现 `*.test.mjs`；`scripts.test` 里同理。
 - 别在测试里起真 HTTP server、真浏览器、真 DSH；harness 的意义就是**离线**。

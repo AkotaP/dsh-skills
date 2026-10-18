@@ -43,6 +43,36 @@ ctx.slots.inject(ownerKey, () => ctx.slots.register(options, Component))
 - 声明即占有：注册进**未声明**的槽位（`slot "…" is not declared`）、声明已声明的子槽位、同 `id`/`key` 重复注册——加载期直接 throw。
 - 槽位清单与发现方法见 `slots.md`。
 
+## 配置 UI 放哪儿（四条路，先选再写）
+
+插件自带配置**不一定**要放设置页。客户端半有四个可注册的位置，都由官方包声明：
+
+| 槽位 | 出现在 | 类别 | 注册选项 | 适合 |
+|---|---|---|---|---|
+| `settings.section` | 设置左侧导航的一个分区 | list | `id` + `order` + `label` + `locale` | 功能多、需要一整页 |
+| `plugins.item` | 设置 → 插件 → 内置插件列表的一张卡 | list | `id` + `label` + `locale` | 官方内置插件的配置 |
+| `plugins.bundle.config` | 设置 → 插件 → **该 bundle 自己的页面**（描述与行列表之间） | keyed | `key` = **包名** + `locale` | bundle 自带配置，观感最像"插件自己的设置页" |
+| `plugins.row.config` | 该 bundle 的某一行 → Configure | keyed | `key` = `'<包名>#<行 id>'` + `locale` | 一行一个配置面板 |
+
+```js
+// bundle 自带配置（最常用的一条：用户说"放插件页里"通常指这个）
+ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+  name: 'plugins.bundle.config',
+  key: PACKAGE_NAME,          // 包名，不是行 id
+  locale: NS,
+}, ({ t, view }) => view === 'summary' ? t('summary') : <MyForm t={t} />))
+```
+
+契约要点（来自 `dsh-client-ui-plugin-manager` 的 README 与声明）：
+
+- `view` 只有两种语义：`'page'` 是带自己保存控件的完整表单，`'summary'` 是标题下的一行摘要。`plugins.item` 默认渲染 summary；`plugins.row.config` 只在包描述缺失时才用 summary。
+- **页面画标题、图标、面包屑**，条目只画内容。
+- **只有 save 会写**，离开页面时暂存编辑被丢弃——所以"改一下立刻写"的面板在这里也成立，但要自己放保存/重置控件，别指望页面帮暂存。
+- `settings.section` 的组件收到 `{ t, close }`，**标题同样要自己画**（外壳只用 `label` 做导航项）。
+- 同一条配置可以同时挂两处：插件页放摘要/常用项，设置分区放完整管理，互不冲突。
+
+参照实现：`dsh-chime` 的 `lib/client.js` 末尾——`ctx.slots.inject('plugins.bundle.config', …)` + `key: PACKAGE_NAME`，组件 `renderSeat(props)` 按 `props.view === 'summary'` 分流摘要与设置面板。
+
 ## 文案：走 `ctx.locale`，不要硬编码
 
 ```js
