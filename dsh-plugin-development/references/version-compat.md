@@ -104,7 +104,7 @@ evaluatePluginCompatibility(JSON.parse(readFileSync("<插件目录>/package.json
 
 1. `node --test --test-isolation=none`（沙箱环境）——离线契约测试全绿。
 2. 跑 `api-snapshot.mjs --diff`——确认注册的槽位、读取的服务都还在。
-3. 重启 DSH 后验证宿主路由/接口状态码（`host-half.md` 的错误码约定）。
+3. 确认宿主已加载新版本（HMR 重组完成；必要时按 `install-and-devloop.md` 的「HMR 与重启边界」重启）后，验证宿主路由/接口状态码（`host-half.md` 的错误码约定）。
 4. 验证 volatile 配置通道仍能投影与写入（`config-channel.md`）。
 5. UI：让用户刷新页面确认；没有浏览器控制工具时**不要**声称界面正常。
 6. 把新的实测结论与版本号一起写进插件文档，**不要只写"改了什么"**。

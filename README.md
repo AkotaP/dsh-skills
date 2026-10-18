@@ -7,7 +7,8 @@
 | Skill | 说明 | 依赖 |
 | --- | --- | --- |
 | [`dsh-session-log-decode`](dsh-session-log-decode/SKILL.md) | 解码 DSH 会话日志（`session[.vN].jsonl.zstd`，多帧 zstd 拼接）为 JSONL 或可读对话，用于检索、统计与复盘历史会话。 | Node.js ≥ 22（`node:zlib` 自带 zstd），零第三方依赖 |
-| [`dsh-plugin-development`](dsh-plugin-development/SKILL.md) | 开发/安装/调试 DSH 插件：bundle 清单、宿主半（Node ESM）、客户端 UI 半与槽位、volatile 配置通道、热更新、离线测试。含本机实测的 86 个槽位清单与坑清单。 | Node.js ≥ 20；脚手架零依赖 |
+| [`dsh-plugin-development`](dsh-plugin-development/SKILL.md) | 开发/安装/调试 DSH 插件：bundle 清单、宿主半（Node ESM）、客户端 UI 半与槽位、volatile 配置通道、HMR 热更新（默认启用，装插件通常无需重启）与离线测试。含本机实测的 86 个槽位清单与坑清单。 | Node.js ≥ 20；脚手架零依赖 |
+| [`plain-doc-writing`](plain-doc-writing/SKILL.md) | 编写或修改文档时使用的客观精简写作规范：第三人称、直陈事实与结论、去人设/寒暄/重复解释，避免角色语气渗入正文。 | 无 |
 | [`unity-scene-merge`](unity-scene-merge/SKILL.md) | Unity 场景/Prefab 三方语义合并流程；含字节保真导出、结构检查与回归测试。 | Python ≥ 3.9、Git；实际合并需匹配版本的 UnityYAMLMerge |
 
 ## 使用

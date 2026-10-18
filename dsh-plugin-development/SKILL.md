@@ -9,13 +9,15 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 本 skill 补官方 `cordis-plugin-development` 的缺口：**官方流程假定 creator mode 工具存在**（`plugin_manager`、`cordis_inspect_*`），但 `ptc`/`standard` preset 并不挂载它们；官方文档中另有若干条命令在 Desktop profile 下实测不可用。
 
 > **版本敏感**：本 skill 编写基线为 DSH `0.1.7-rc.2`；复核时安装为 `0.2.0-rc.2`，再复核为 **`0.2.1-rc.2`**（客户端槽位 85 → 86，参考插件 30 条离线测试仍全绿）。**`0.2.1` 起 `engines.dsh` 会被真实校验，不满足会禁用插件**（见 `references/version-compat.md` §5）。下文标「实测」的结论都绑定具体版本，**升级后用 `references/version-compat.md` 重新核对，不要照搬**。
+>
+> **热重载不是 `0.2.1` 才有的**：`dsh-base` 的 `hmr` 行从 **`0.0.1-rc.1`** 就在（当时是 vendored 的 `@deepseek-ai/cordis-plugin-hmr`，`root: ['.']`，源码监听）；`0.1.5-rc.1` 里一度 `disabled: true`（改为按 profile 自选）；`0.1.6-alpha.2`（2026-09-17）起换成 `@deepseek-ai/dsh-hmr` 并在有 `profileContext` 时默认开启（`root: []`）。但两代能力不同：`0.1.6-alpha.2`–`0.2.1-alpha.2` 只做**配置层**重组，装新包与改宿主半代码仍要重启；**`0.2.1-alpha.3` 起**纳入 `recomposeProfile()`（发布新解析 + 替换变过的已加载模块），**装插件从此完全不需要重启**。版本沿革见 `references/install-and-devloop.md` §开发循环。
 
 ## 0. 先分清四条路
 
 | 任务 | 走哪条 | 关键代价 |
 |---|---|---|
-| 修改已有插件的配置字段值 | 直接改 profile 的 `cordis.patch.yml` | 属于对 `~/.dsh` 的写入：**需先经用户确认**；重启或热更后生效 |
-| 编写新插件 / 改插件代码（默认 preset） | **本文 §2–§3 的手工路线** | 改 `~/.dsh` 三处 + 重启 DSH：**需先经用户确认** |
+| 修改已有插件的配置字段值 | 直接改 profile 的 `cordis.patch.yml` | 属于对 `~/.dsh` 的写入：**需先经用户确认**；保存后由 HMR 重组，即时生效 |
+| 编写新插件 / 改插件代码（默认 preset） | **本文 §2–§3 的手工路线** | 改 `~/.dsh` 三处：**需先经用户确认**；安装与配置改动即时热重组，仅少数情况需重启（§3） |
 | 同上，但会话处于 `cordis` preset（creator mode） | 官方 skill + `plugin_manager` `install_bundle` | 仍需审批，但无需手改 profile |
 | 仅接入 MCP server | 纯配置 bundle（无 JS），见官方 `cordis-plugin-development` skill 的 `cordis-plugin-development/references/mcp-bundle.md` | 同上 |
 
@@ -31,7 +33,9 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
   - **宿主半** `lib/index.js`：普通 Node ESM，运行在 DSH 宿主进程内。
   - **客户端半** `lib/client.js`：浏览器 bundle，形如 `window.__ModuleLoader__.load({ id, factory })`。
   - **清单** `package.json` 的 `dsh.bundle.patch`（→ `cordis.patch.yml`）+ `dsh.client.*`。
-- 生效机制：**客户端半改文件即热更**（`dsh-client-hmr` 默认 500ms 轮询入口产物，按 mtime/ctime/size 判定 revision）；**宿主半改动必须重启 DSH**（除非 profile 额外挂载 `@deepseek-ai/dsh-hmr` 并配置 `root`）。
+- 生效机制（`0.2.1` 实测）：
+  - **客户端半**：`dsh-client-hmr` 默认 500ms 轮询入口产物，按 mtime/ctime/size 判定 revision；同时经 `/plugins/events` SSE 推送插件图，**开着的页面不用手动刷新**。
+  - **宿主半（`0.2.1+` 实测）**：HMR 默认随 base bundle 启用（不需要额外挂载，`root: []` 只表示不监听源码文件）。profile 的 `package.json`（仅 `dsh.profile.bundles` 有序列表变化时）、profile `cordis.patch.yml`、home patch 都在监视列表里；任一变化触发一次**重组**，重组会停下受影响的 Loader 条目、驱逐已加载模块、按磁盘当前内容重新 import——所以**装插件、开关插件、改已加载插件（含 link 插件）的宿主半代码都不用重启**。`root: []` 下改源码文件本身不触发重组，保存一次 patch 或做一次插件页操作即可。
 
 ## 2. 最小可跑插件（四文件）
 
@@ -107,11 +111,11 @@ window.__ModuleLoader__.load({
 
 ## 3. 装入 profile（手工路线）
 
-**每一步都在写 `~/.dsh`：动手前需取得用户明确同意，并说明这需要重启 DSH（重启会打断正在运行的会话）。** 共三处 + 一次安装 + 一次重启：
+**每一步都在写 `~/.dsh`：动手前需取得用户明确同意**——这会改变当前 profile 的插件组成，所有使用该 profile 的会话都受影响；但 HMR 默认启用，装完即时重组，**一般不需要重启**（例外见本节末尾）。共三处 + 一次安装：
 
 1. profile 的 `package.json`（即 `$DSH_PROFILE_DIR/package.json`）
    - `dependencies` 加 `"<pkg-name>": "link:<插件仓库绝对路径>"`（开发期）或版本号（已发布 npm）
-   - `dsh.profile.bundles` 数组加 `"<pkg-name>"`
+   - `dsh.profile.bundles` 数组加 `"<pkg-name>"`（**建议等步骤 2 装完包再写这一行**：写早了会先重组出一次 `failed`，再靠下一次重组重试）
 2. 在 profile 目录执行 `pnpm install`（建立 link；这是手工路线中唯一必须跑 pnpm 的地方）
 3. profile 的 `cordis.patch.yml`（即 `$DSH_PROFILE_DIR/cordis.patch.yml`）加条目（可带 `config` 覆盖默认值；注意 **patch 整体替换 `config`，不是深合并**）：
    ```yaml
@@ -120,11 +124,19 @@ window.__ModuleLoader__.load({
          name: '@local/my-plugin'
          config: {}
    ```
-4. 经用户确认后重启 DSH（宿主半才会加载）。
-5. 验证：设置 → 插件页应出现条目；涉及 UI 时由用户刷新页面确认。
+4. **触发热重组**：patch 文件或 bundles 列表的写入会被 HMR 的 profile 监视捕获，宿主半当场 import 并 apply，浏览器侧由 `/plugins/events` 同步。顺序上先 `pnpm install` 再写 bundles/patch；若包还没装好就重组的，会记为 `failed` 并在下一次重组时重试——修改 patch 内容（哪怕只是注释）或再写一次 bundles 列表即可触发。
+5. 验证：设置 → 插件页的条目与状态（安装类操作看 `application`：`applied` 才是生效，`restart-required` 才算例外）；涉及 UI 时按页面实际表现确认，必要时让用户刷新。
 
-回滚：删除 patch 条目 + 从 `dsh.profile.bundles` 移除 + `pnpm remove`，然后重启。
-完整命令、creator-mode 路线对照、HMR 与发版见 `references/install-and-devloop.md`。
+回滚：从 `dsh.profile.bundles` 移除 + 删 patch 条目 → `pnpm remove <pkg>`。被丢弃映射下的模块会被驱逐，同样即时生效。
+
+**只有这些情况才需要重启**（Plugin Manager 的 `application: 'restart-required'` 对应同一份清单）：
+- profile 是仅启动型（headless / sdk / acp 的 bundle 里 `- id: hmr, disabled: true`）→ `no-hmr`；
+- 已安装包换了目录或 link 目标、或要替换 DSH 安装自带的同名包（`package-moved`，必须先卸载再装）；
+- 改动落在 DSH 自己进程加载的模块（`host-module`）、或 Loader 树外的插件（`unmanaged-plugin`）；
+- 拿不到 ESM 缓存（packed worker loader）或模块比较失败（`module-comparison`）；
+- 手工只跑了 `pnpm add` 而没改 `dsh.profile.bundles`：纯依赖变更不触发重组，要等下一次重组或重启。
+
+完整命令、creator-mode 路线对照、HMR 与重启边界、发版见 `references/install-and-devloop.md`。
 
 ## 4. 验证（不得以「应该能用」结案）
 
@@ -134,9 +146,9 @@ window.__ModuleLoader__.load({
    node --test --test-isolation=none     # 进程内执行，避免沙箱下的 spawn EPERM
    ```
    **沙箱环境下必须加 `--test-isolation=none`**：默认每个测试文件 spawn 子进程并走管道，会触发 `EPERM spawn`（实测）。
-2. **宿主接口**：重启后直接请求 loopback 路由验证响应与状态码。
+2. **宿主接口**：宿主挂载后（新装/改代码由 HMR 重组完成，或按 §3 末尾清单重启后）直接请求 loopback 路由验证响应与状态码。
 3. **UI**：没有浏览器控制工具时，请用户刷新页面并提供截图或控制台报错；**在未实际观察前不得声称界面正常**。槽位条目崩溃会在控制台输出 `slot entry crashed in '<slot>'`。
-4. 改了宿主半却未重启就宣称「已生效」属于虚假报告，这是最常见的自欺。
+4. 改了宿主半后**没观测到重组结果**就宣称「已生效」属于虚假报告——最省事的三条证据：插件页该行状态、宿主日志里的 `restart required: <reason>` / `changed modules keep running their previous code` 警告、以及路由/工具的真实响应。
 
 ## 5. 排查入口
 
@@ -186,9 +198,9 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 | 客户端半：模块格式、slots 注册、locale、CSS、热更、版本容错 | `references/client-half.md` |
 | 真实槽位清单（实测 86 个，含声明包）与发现方法 | `references/slots.md` |
 | volatile 配置通道：宿主 schema + 客户端 configForms 读写与报错 | `references/config-channel.md` |
-| 两条安装路线、依赖解析不对称、HMR、重启、发版、回滚 | `references/install-and-devloop.md` |
+| 两条安装路线、依赖解析不对称、HMR 与何时需要重启、发版、回滚 | `references/install-and-devloop.md` |
 | 离线测试 harness 的写法、断言范围、沙箱下的跑法 | `references/testing.md` |
-| 坑清单（23 条，全部来自实测或真实故障） | `references/pitfalls.md` |
+| 坑清单（24 条，全部来自实测或真实故障） | `references/pitfalls.md` |
 | 版本怎么读、插件声明的宿主版本如何被检查/豁免、升级前后怎么对齐 | `references/version-compat.md` |
 | 生成最小插件骨架 | `scripts/scaffold-plugin.mjs` |
 | 采集/对比 API 表面（版本、槽位、服务） | `scripts/api-snapshot.mjs` |
