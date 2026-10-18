@@ -45,7 +45,7 @@
 
 25. **在 handler / 事件回调 / 定时器里读 `ctx.config`** → `cannot get property "config" without inject`。配置只能从 `apply(ctx, config)` 第二参数拿；需要请求期访问就把 volatile 引用在 `apply` 时缓存下来。
 26. **自己的插件路由返回裸 400 就怀疑认证** → 想多了。未注册路径会走 fallback（认证部署里是 401），**400 基本等于 handler 抛错**。先把 handler 包 try/catch 并把错误写进响应体。
-27. **profile 里 `pnpm install` 被无关依赖卡死** → 实测 `@dsh-ops/bash-win32-x64@0.2.1` 镜像上不存在，导致整个 install 失败、**要装的 link 也没建出来**。降级：`New-Item -ItemType Junction` 手工建等价链接（与 pnpm 同形）；代价是 lockfile 里没记录。
+27. **profile 里 `pnpm install` 被无关依赖卡死** → 实测某个平台专用的间接依赖在镜像上缺版本（`ERR_PNPM_NO_MATCHING_VERSION`），导致整个 install 失败、**要装的 link 也没建出来**。降级：`New-Item -ItemType Junction` 手工建等价链接（与 pnpm 同形）；代价是 lockfile 里没记录。
 28. **包内 `cordis.patch.yml` 已经 `insert` 了，又在 profile 的 `cordis.patch.yml` 里再 insert 一次** → 同一个 id 重复。bundles 路线（包里带 `dsh.bundle.patch`）**只需要把包列进 `dsh.profile.bundles`**；profile patch 只在"没有包内 patch"或"要覆盖某行 config"时才写。
 29. **`node --test --test-isolation=none test/` 传目录** → `ERR_UNSUPPORTED_DIR_IMPORT`。别给路径参数，让 Node 自己发现；同理 `scripts.test` 里也别带。
 30. **把组件的初始状态放在 `useEffect` 里初始化** → 离线 harness 的迷你 React 不跑 effect，冒烟测试覆盖不到那段逻辑（本次预览区就是这么漏的）。初始值用惰性 `useState(() => ...)`，副作用才放 effect。

@@ -26,7 +26,7 @@ $repo       = "<插件仓库绝对路径>"
 
 1. **profile `package.json`**：`dependencies` 加 `"<pkg>": "link:$repo"`（开发期）或版本号（已发 npm）；`dsh.profile.bundles` 数组加 `"<pkg>"`。
 2. **装 link**：在 `$profileDir` 跑 `pnpm install`。结果应是 `$profileDir\node_modules\<pkg>` 指向仓库（junction/symlink）。**仓库改了就是运行版改了，不存在第二份副本。**
-   失败时先看原因：`ERR_PNPM_NO_MATCHING_VERSION` 之类**往往是与你无关的依赖**（实测 `@dsh-ops/bash-win32-x64@0.2.1` 镜像上没有）。这种 install 会整盘失败，**你的 link 也没建出来**——降级为手工建同形链接：
+   失败时先看原因：`ERR_PNPM_NO_MATCHING_VERSION` 之类**往往来自与你无关的依赖**（实测遇到过平台专用间接依赖在镜像上缺版本）。这种 install 会整盘失败，**你的 link 也没建出来**——降级为手工建同形链接：
    ```powershell
    New-Item -ItemType Junction -Path "$profileDir\node_modules\@local\my-plugin" -Target $repo
    ```

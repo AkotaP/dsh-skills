@@ -71,7 +71,7 @@ ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
 - `settings.section` 的组件收到 `{ t, close }`，**标题同样要自己画**（外壳只用 `label` 做导航项）。
 - 同一条配置可以同时挂两处：插件页放摘要/常用项，设置分区放完整管理，互不冲突。
 
-参照实现：`dsh-chime` 的 `lib/client.js` 末尾——`ctx.slots.inject('plugins.bundle.config', …)` + `key: PACKAGE_NAME`，组件 `renderSeat(props)` 按 `props.view === 'summary'` 分流摘要与设置面板。
+推荐写法：`key` 用包名常量、组件按 `props.view === 'summary'` 分流摘要与设置面板（注册代码见上面的片段）；keyed 槽位的完整契约以 `@deepseek-ai/dsh-client-ui-plugin-manager` 的 README 与槽位声明为准。
 
 ## 文案：走 `ctx.locale`，不要硬编码
 

@@ -130,7 +130,8 @@ window.__ModuleLoader__.load({
 - `settings.section` 的组件收到 `{ t, close }`，**标题也要自己画**（外壳只用 `label` 做导航）。
 - 同一条配置可以同时挂两处（插件页放摘要、设置分区放完整管理），互不冲突。
 
-参照实现：`dsh-chime` 的 `lib/client.js` 用 `plugins.bundle.config` + `key: PACKAGE_NAME`，`renderSeat(props)` 里按 `props.view === 'summary'` 分摘要/面板。
+推荐写法：`ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME, locale: NS }, Cmp))`，`Cmp` 里按 `view === 'summary'` 分流摘要与面板。keyed 槽位的完整契约以 `@deepseek-ai/dsh-client-ui-plugin-manager` 的 README 与槽位声明为准。
+
 ## 3. 装入 profile（手工路线）
 
 **每一步都在写 `~/.dsh`：动手前需取得用户明确同意**——这会改变当前 profile 的插件组成，所有使用该 profile 的会话都受影响；但 HMR 默认启用，装完即时重组，**一般不需要重启**（例外见本节末尾）。共三处 + 一次安装：
@@ -140,7 +141,7 @@ window.__ModuleLoader__.load({
    - `dsh.profile.bundles` 数组加 `"<pkg-name>"`（**建议等步骤 2 装完包再写这一行**：写早了会先重组出一次 `failed`，再靠下一次重组重试）
    - 包自带 `dsh.bundle.patch`（§2 的骨架就是）时，**这一行就够了**：loader 会把包内 `cordis.patch.yml` 当成一层 patch 应用，步骤 3 不要重复 insert 同一个 id。
 2. 在 profile 目录执行 `pnpm install`（建立 link；这是手工路线中唯一必须跑 pnpm 的地方）
-   - **它可能被与你无关的依赖卡死**：实测 `dsh-ops` 的 `@dsh-ops/bash-win32-x64@0.2.1` 在镜像上不存在 → 整个 install 失败，**你的 link 也不会被创建**。降级做法是建立等价链接（与 pnpm 生成的同形）：
+   - **它可能被与你无关的依赖卡死**：实测某个平台专用的间接依赖在镜像上缺版本（`ERR_PNPM_NO_MATCHING_VERSION`）→ 整个 install 失败，**你的 link 也不会被创建**。降级做法是建立等价链接（与 pnpm 生成的同形）：
    ```powershell
    New-Item -ItemType Junction -Path "$env:DSH_PROFILE_DIR\node_modules\@local\my-plugin" -Target $repo
    ```
