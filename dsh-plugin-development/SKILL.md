@@ -1,6 +1,6 @@
 ---
 name: dsh-plugin-development
-description: 开发、修改、安装、调试 DSH（DeepSeek Harness）插件——bundle 清单、宿主半（Node ESM）、客户端 UI 半（浏览器 bundle）、槽位注册、volatile 配置通道、热更新与离线测试。适用于为 Harness 添加页面/面板/按钮/装饰物/工具/MCP，或改动、排查已安装插件。
+description: 开发、修改、安装、调试 DSH（DeepSeek Harness）插件——bundle 清单、多组件打包与展示元信息、宿主半（Node ESM）、客户端 UI 半（浏览器 bundle）、槽位注册、volatile 配置通道、热更新与离线测试。适用于为 Harness 添加页面/面板/按钮/装饰物/工具/MCP，或改动、排查已安装插件。
 whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cordis-plugin-development 所依赖的 plugin_manager / cordis_inspect_* 在会话中不可用时。
 ---
 
@@ -29,7 +29,7 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 - shell 中会注入 `DSH_HOME`（数据根目录，默认 `~/.dsh`）、`DSH_PROFILE`（当前 profile 名）、`DSH_PROFILE_DIR`（该 profile 目录）；未设置表示 harness 未以 profile 启动。通用取值方式见 `references/paths.md`。
 - **`dsh --profile desktop --dump-config` 在 Desktop profile 下失败**：`error: profile "desktop" is managed exclusively by the Electron application`。查看合成配置需改用 §5 的方式。
 - 官方包与安装同处一个 asar 归档，**位置随安装目录变化**，不要写死。**只有宿主进程自身的 `fs` 能读取**（例如 `run_code` 里的 `node:fs`）；`rg`/`glob`/`pwsh` 的 `ls`/`cat` 均报 `ENOENT`。定位方式与读取示例见 `references/paths.md`。查 API 优先读包目录下的 `README.md`，其次 `lib/index.js`（部分 build 不含 `lib/types`）。
-- 一个插件 = 一个 npm 包，两半：
+- 最小插件通常是一个 npm 包，包含两半；一个 bundle 也可组合多个独立插件包（见 §2.6）：
   - **宿主半** `lib/index.js`：普通 Node ESM，运行在 DSH 宿主进程内。
   - **客户端半** `lib/client.js`：浏览器 bundle，形如 `window.__ModuleLoader__.load({ id, factory })`。
   - **清单** `package.json` 的 `dsh.bundle.patch`（→ `cordis.patch.yml`）+ `dsh.client.*`。
@@ -132,6 +132,10 @@ window.__ModuleLoader__.load({
 
 推荐写法：`ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME, locale: NS }, Cmp))`，`Cmp` 里按 `view === 'summary'` 分流摘要与面板。keyed 槽位的完整契约以 `@deepseek-ai/dsh-client-ui-plugin-manager` 的 README 与槽位声明为准。
 
+## 2.6 多组件：独立开关与展示名称
+
+添加可选组件时，需分别确认 **宿主入口、独立客户端生命周期、插件页展示名称**。DSH `0.2.1-rc.2` 中，文件路径入口可加载子包客户端，但标题可能回退为完整文件 URL；包子路径也不能直接作为独立客户端包根。推荐使用主包真实依赖的具名子包，并通过 `bundledDependencies` 随包分发，导出中英文 `meta.title`。仅添加字段、子包目录或客户端翻译字典均不够。结构示例、版本边界及验收清单见[多组件打包与展示名称](references/multi-components.md)。
+
 ## 3. 装入 profile（手工路线）
 
 **每一步都在写 `~/.dsh`：动手前需取得用户明确同意**——这会改变当前 profile 的插件组成，所有使用该 profile 的会话都受影响；但 HMR 默认启用，装完即时重组，**一般不需要重启**（例外见本节末尾）。共三处 + 一次安装：
@@ -226,11 +230,12 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 | 环境变量、安装目录与包目录的通用定位（不写死路径） | `references/paths.md` |
 | 宿主半：导出形态、inject 与 ctx.get、Config/volatile、路由、生命周期、错误约定 | `references/host-half.md` |
 | 客户端半：模块格式、slots 注册、**配置 UI 放哪儿（设置分区 / 插件页四槽位）**、locale、CSS、热更、版本容错 | `references/client-half.md` |
+| 多组件独立开关、具名子包、展示元信息、发布包验收及平滑升级 | [multi-components.md](references/multi-components.md) |
 | 真实槽位清单（实测 86 个，含声明包）与发现方法 | `references/slots.md` |
 | volatile 配置通道：宿主 schema + 客户端 configForms 读写与报错 | `references/config-channel.md` |
 | 两条安装路线、依赖解析不对称、HMR 与何时需要重启、发版、回滚 | `references/install-and-devloop.md` |
 | 离线测试 harness 的写法、断言范围、沙箱下的跑法 | `references/testing.md` |
-| 坑清单（24 条，全部来自实测或真实故障） | `references/pitfalls.md` |
+| 加载、生命周期、打包、测试及环境问题清单 | `references/pitfalls.md` |
 | 版本怎么读、插件声明的宿主版本如何被检查/豁免、升级前后怎么对齐 | `references/version-compat.md` |
 | 生成最小插件骨架 | `scripts/scaffold-plugin.mjs` |
 | 采集/对比 API 表面（版本、槽位、服务） | `scripts/api-snapshot.mjs` |

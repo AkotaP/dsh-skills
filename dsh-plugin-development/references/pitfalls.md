@@ -49,3 +49,10 @@
 28. **包内 `cordis.patch.yml` 已经 `insert` 了，又在 profile 的 `cordis.patch.yml` 里再 insert 一次** → 同一个 id 重复。bundles 路线（包里带 `dsh.bundle.patch`）**只需要把包列进 `dsh.profile.bundles`**；profile patch 只在"没有包内 patch"或"要覆盖某行 config"时才写。
 29. **`node --test --test-isolation=none test/` 传目录** → `ERR_UNSUPPORTED_DIR_IMPORT`。别给路径参数，让 Node 自己发现；同理 `scripts.test` 里也别带。
 30. **把组件的初始状态放在 `useEffect` 里初始化** → 离线 harness 的迷你 React 不跑 effect，冒烟测试覆盖不到那段逻辑（本次预览区就是这么漏的）。初始值用惰性 `useState(() => ...)`，副作用才放 effect。
+
+## 多组件及相关环境补充（2026-10，DSH `0.2.1-rc.2`）
+
+31. **组件能加载，标题却显示完整文件 URL** → 客户端发现与展示元信息读取不是同一条链路。仅补子包名称、客户端字典或面板标题不足以修复宿主标题。优先采用真实可解析的具名子包，导出 locale 展示资源并随主包携带，验证实际归档。详见[多组件打包与展示名称](multi-components.md)；不要通过覆写宿主元信息方法或修改页面 DOM 掩盖打包问题。
+32. **依赖缓存升级或安装中断，被误判为插件故障** → 包管理器版本、registry 或缓存布局变化可能使旧 lockfile 的离线校验失败；安装超时也可能已移除部分 `node_modules` 链接。先检查进程、原版本与现有链接，再决定修复范围；恢复后重跑构建和完整测试，不默认清空依赖、升级无关包或关闭供应链校验。手工工作区链接不能代替可复现的依赖声明与发布验证。
+33. **把只读归档检查当成完成部署验证** → Windows 沙箱可能在路径规范化或解包检查阶段拒绝访问。归档读取、落盘解包、干净环境安装和 GUI 观察是不同层次；受阻时说明已验证范围，不为附加检查移除安全过滤或悄悄扩大权限。真正的工作区访问异常按对应权限诊断流程处理。
+34. **用 Desktop 宿主的 `process.execPath` 猜 Node CLI** → 它可能指向 Electron 程序。构建或测试应使用已确认的 Node 可执行文件，避免误启动宿主程序。
