@@ -9,7 +9,7 @@
 3. **客户端服务没写进 `inject`** → `ctx.get()` 返回 `undefined`，功能"看着有、实际不生效"（`configForms` 踩过）。
 4. **`dsh.client.inject` 漏声明客户端包** → `require` 在浏览器模块表里解析失败，槽位条目直接崩。
 5. **客户端 bundle 的 `id` 与包名不一致 / `configForms.get(id)` 用的不是 patch 行 id** → 配置读写打在空气上。应写断言锁住"配置命名空间必须等于 `cordis.patch.yml` 里的条目 id"。
-6. **`engines.dsh` / `@deepseek-ai/dsh*` peer 与运行中的宿主版本不匹配** → 启动时该插件被**禁用**（stderr：`dsh: disabling profile plugin …`），安装时被**拒绝**（`incompatible-version`，`nothing was installed`）。`0.2.1+` 以 `engines.dsh` 优先、`0.2.0` 只查 peer；补救是升级插件版本，或按精确版本豁免（`dsh plugin allow-version <pkg@ver> --dsh-version <exact> --accept-risk`，见 `version-compat.md` §5）。
+6. **`engines.dsh` / `@deepseek-ai/dsh*` peer 与运行中的宿主版本不匹配** → 启动时该插件被**禁用**（stderr：`dsh: disabling profile plugin …`），安装时被**拒绝**（`incompatible-version`，`nothing was installed`）。写了 `engines.dsh` 就只看它、没写才回退看 peer；补救是升级插件版本，或按精确版本豁免（`dsh plugin allow-version <pkg@ver> --dsh-version <exact> --accept-risk`，见 `version-compat.md` §5）。
 
 ## 生命周期与热更
 
@@ -37,11 +37,11 @@
 ## 写测试时的坑
 
 21. **组件里的 `setInterval` 不清除会让 `node --test` 永不退出**（harness 里把 interval 变 no-op，`setTimeout` 保持真实）。
-22. **把「实测」结论当成跨版本真理** → harness 升级会改 API：`0.1.7-rc.2` → `0.2.0-rc.2` 就新增了槽位、Node 从 24.15 升到 24.18；`0.2.1-rc.2` 又把 `engines.dsh` 纳入真实校验。升级后先跑 `scripts/api-snapshot.mjs --diff` 再跑插件测试，别凭记忆断言。
+22. **把「实测」结论当成跨版本真理** → harness 每个小版本都可能改插件契约（槽位、服务、投影注册、菜单 API、`engines.dsh` 校验）。升级后先按 `version-compat.md` §4 逐条核对，再跑 `scripts/api-snapshot.mjs --diff` 与插件测试，别凭记忆断言。
 23. **`lib/client.js` 是构建产物**（CRLF、超长 CSS 字符串、类名映射）——用工具改，别手抄；改完必须过语法检查 + harness。
 24. **手工 `pnpm add` 之后没改 `dsh.profile.bundles`** → 包装进 `node_modules` 了，但 HMR 只在**有序 bundles 列表**变化时才重组（纯依赖变更不触发），表现为"装了却到处找不着"，要等下一次重组或重启。走 Plugin Manager 安装时它自己写列表并触发重组，没有这个问题。
 
-## 本次实测补充（2026-10，DSH `0.2.1-rc.2`）
+## 实测补充（DSH `0.2.1-rc.2`）
 
 25. **在 handler / 事件回调 / 定时器里读 `ctx.config`** → `cannot get property "config" without inject`。配置只能从 `apply(ctx, config)` 第二参数拿；需要请求期访问就把 volatile 引用在 `apply` 时缓存下来。
 26. **自己的插件路由返回裸 400 就怀疑认证** → 想多了。未注册路径会走 fallback（认证部署里是 401），**400 基本等于 handler 抛错**。先把 handler 包 try/catch 并把错误写进响应体。
@@ -50,7 +50,7 @@
 29. **`node --test --test-isolation=none test/` 传目录** → `ERR_UNSUPPORTED_DIR_IMPORT`。别给路径参数，让 Node 自己发现；同理 `scripts.test` 里也别带。
 30. **把组件的初始状态放在 `useEffect` 里初始化** → 离线 harness 的迷你 React 不跑 effect，冒烟测试覆盖不到那段逻辑（本次预览区就是这么漏的）。初始值用惰性 `useState(() => ...)`，副作用才放 effect。
 
-## 多组件及相关环境补充（2026-10，DSH `0.2.1-rc.2`）
+## 多组件及相关环境补充（DSH `0.2.1-rc.2`）
 
 31. **组件能加载，标题却显示完整文件 URL** → 客户端发现与展示元信息读取不是同一条链路。仅补子包名称、客户端字典或面板标题不足以修复宿主标题。优先采用真实可解析的具名子包，导出 locale 展示资源并随主包携带，验证实际归档。详见[多组件打包与展示名称](multi-components.md)；不要通过覆写宿主元信息方法或修改页面 DOM 掩盖打包问题。
 32. **依赖缓存升级或安装中断，被误判为插件故障** → 包管理器版本、registry 或缓存布局变化可能使旧 lockfile 的离线校验失败；安装超时也可能已移除部分 `node_modules` 链接。先检查进程、原版本与现有链接，再决定修复范围；恢复后重跑构建和完整测试，不默认清空依赖、升级无关包或关闭供应链校验。手工工作区链接不能代替可复现的依赖声明与发布验证。

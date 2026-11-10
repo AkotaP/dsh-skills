@@ -30,18 +30,20 @@
 
 ## 清单
 
-> **版本敏感**：本清单采集自 `0.2.0-rc.2`，共 **86** 个槽位。上一版（`0.1.7-rc.2`）为 85 个：`0.2.0` 新增 `sidebar.right.tab.files.actions`，无移除。**升级 harness 后请重新采集**——用 `scripts/api-snapshot.mjs` 做前后 diff 最省事。
+> **版本敏感**：本清单采集自 **`0.2.2-rc.1`**，共 **107** 个槽位（上一版 `0.2.0-rc.2` 为 86 个）。**升级 harness 后请重新采集**——用 `scripts/api-snapshot.mjs` 做前后 diff 最省事。
 >
 > 生成方式：扫描安装自带 `@deepseek-ai/dsh-client-*` 各包的 `lib/**/*.js`，取注册/注入/渲染调用点里的字符串，只保留槽位名与声明包名。它代表"该 build 里真实出现过的槽位名"，不等于类型声明全集。
 
-### `shell.*`（2）
+### `shell.*`（4）
 
 | 槽位 | 声明包 |
 |---|---|
+| `shell.bottom` | `dsh-client-ui-layout` |
 | `shell.leading` | `dsh-client-ui-layout`, `dsh-client-ui-sidebar` |
-| `shell.overlay` | `dsh-client-ui-chat`, `dsh-client-ui-layout`, `dsh-client-ui-plugin-manager`, `dsh-client-ui-schedule`, `dsh-client-ui-settings-session-log`, `dsh-client-ui-shortcuts`, `dsh-client-ui-workspace` |
+| `shell.overlay` | `dsh-client-ui-chat`, `dsh-client-ui-context-menu`, `dsh-client-ui-file-drag`, `dsh-client-ui-layout`, `dsh-client-ui-open-in-app`, `dsh-client-ui-plugin-manager`, `dsh-client-ui-schedule`, `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-session-log`, `dsh-client-ui-shortcuts`, `dsh-client-ui-workspace` |
+| `shell.quota-notice` | `dsh-client-ui-settings-account` |
 
-### `sidebar.*`（22）
+### `sidebar.*`（25）
 
 | 槽位 | 声明包 |
 |---|---|
@@ -50,6 +52,7 @@
 | `sidebar.chat.conversation` | `dsh-client-ui-subagent` |
 | `sidebar.footer.action` | `dsh-client-ui-cordis`, `dsh-client-ui-sidebar` |
 | `sidebar.panellist` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar` |
+| `sidebar.panellist.actions` | `dsh-client-ui-entry-customization`, `dsh-client-ui-sidebar` |
 | `sidebar.right.pane.tab` | `dsh-client-ui-deliverables`, `dsh-client-ui-plan`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar-browser`, `dsh-client-ui-sidebar-documentpreview`, `dsh-client-ui-sidebar-files`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal`, `dsh-client-ui-subagent` |
 | `sidebar.right.pane.tab.title` | `dsh-client-ui-plan`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar-browser`, `dsh-client-ui-sidebar-documentpreview`, `dsh-client-ui-sidebar-files`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal` |
 | `sidebar.right.tab.document` | `dsh-client-ui-sidebar-documentpreview` |
@@ -57,10 +60,12 @@
 | `sidebar.right.tab.document.actions` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-documentpreview` |
 | `sidebar.right.tab.document.unpreviewable` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-documentpreview` |
 | `sidebar.right.tab.files.actions` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-files` |
+| `sidebar.right.tab.guide.actions` | `dsh-client-ui-entry-customization`, `dsh-client-ui-sidebar-right` |
 | `sidebar.right.tab.guide.entry` | `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal` |
 | `sidebar.right.tab.menu.item` | `dsh-client-ui-sidebar-right` |
 | `sidebar.session.row.hover` | `dsh-client-ui-schedule`, `dsh-client-ui-workspace` |
 | `sidebar.session.row.leading` | `dsh-client-ui-schedule`, `dsh-client-ui-workspace` |
+| `sidebar.session.row.trailing` | `dsh-client-ui-workspace` |
 | `sidebar.settings` | `dsh-client-ui-settings-general`, `dsh-client-ui-sidebar` |
 | `sidebar.toggle.badge` | `dsh-client-ui-settings-general`, `dsh-client-ui-sidebar` |
 | `sidebar.workspaces` | `dsh-client-ui-sidebar`, `dsh-client-ui-workspace` |
@@ -68,15 +73,20 @@
 | `sidebar.workspaces.session.menu.item` | `dsh-client-ui-workspace` |
 | `sidebar.workspaces.session.row.action` | `dsh-client-ui-workspace` |
 
-### `conversation.*`（33）
+### `conversation.*`（41）
 
 | 槽位 | 声明包 |
 |---|---|
 | `conversation.approval.detail` | `dsh-client-ui-approval`, `dsh-client-ui-chat` |
 | `conversation.chat.assistant-actions` | `dsh-client-ui-chat`, `dsh-client-ui-message-feedback` |
 | `conversation.chat.commandview` | `dsh-client-ui-chat` |
+| `conversation.chat.flow` | `dsh-client-ui-chat` |
+| `conversation.chat.message.images` | `dsh-client-ui-attachment`, `dsh-client-ui-chat` |
 | `conversation.chat.node` | `dsh-client-ui-chat`, `dsh-client-ui-goal`, `dsh-client-ui-tool`, `dsh-client-ui-user-questions`, `dsh-client-ui-workflow-run` |
-| `conversation.chat.turnTail` | `dsh-client-ui-chat`, `dsh-client-ui-deliverables`, `dsh-client-ui-plan`, `dsh-client-ui-schedule` |
+| `conversation.chat.reasoning.body` | `dsh-client-ui-chat` |
+| `conversation.chat.text-interaction` | `dsh-client-ui-chat` |
+| `conversation.chat.turnTail` | `dsh-client-ui-action-cards`, `dsh-client-ui-chat`, `dsh-client-ui-deliverables`, `dsh-client-ui-plan`, `dsh-client-ui-schedule` |
+| `conversation.chat.user.images` | `dsh-client-ui-attachment`, `dsh-client-ui-chat` |
 | `conversation.composer` | `dsh-client-ui-approval`, `dsh-client-ui-subagent`, `dsh-client-ui-user-questions` |
 | `conversation.composer.bar` | `dsh-client-ui-conversation` |
 | `conversation.composer.dock` | `dsh-client-ui-chat`, `dsh-client-ui-conversation` |
@@ -84,6 +94,7 @@
 | `conversation.header.leading` | `dsh-client-ui-conversation` |
 | `conversation.hero.agentPreset` | `dsh-client-ui-agent-preset`, `dsh-client-ui-conversation` |
 | `conversation.hero.brand.mark` | `dsh-client-ui-conversation` |
+| `conversation.hero.options` | `dsh-client-ui-conversation` |
 | `conversation.hero.workspace` | `dsh-client-ui-conversation`, `dsh-client-ui-workspace` |
 | `conversation.hero.workspace.directoryFlow` | `dsh-client-ui-directory-picker-browse`, `dsh-client-ui-directory-picker-native`, `dsh-client-ui-workspace` |
 | `conversation.input.activity` | `dsh-client-ui-conversation` |
@@ -91,11 +102,11 @@
 | `conversation.input.dock` | `dsh-client-ui-conversation`, `dsh-client-ui-goal` |
 | `conversation.input.left` | `dsh-client-ui-conversation` |
 | `conversation.input.model` | `dsh-client-ui-conversation`, `dsh-client-ui-model-selection` |
+| `conversation.input.model.label` | `dsh-client-ui-model-selection` |
 | `conversation.input.overlay` | `dsh-client-ui-commands`, `dsh-client-ui-conversation`, `dsh-client-ui-input-trigger`, `dsh-client-ui-message-feedback` |
 | `conversation.input.permission` | `dsh-client-ui-conversation`, `dsh-client-ui-permission-presets` |
 | `conversation.input.plan` | `dsh-client-ui-conversation`, `dsh-client-ui-plan` |
 | `conversation.input.right` | `dsh-client-ui-conversation` |
-| `conversation.message.images` | `dsh-client-ui-attachment`, `dsh-client-ui-chat` |
 | `conversation.plan-review.actions` | `dsh-client-ui-plan`, `dsh-client-ui-user-questions` |
 | `conversation.session` | `dsh-client-ui-conversation`, `dsh-client-ui-subagent` |
 | `conversation.session.header` | `dsh-client-ui-conversation` |
@@ -103,10 +114,12 @@
 | `conversation.session.header.corner` | `dsh-client-ui-conversation`, `dsh-client-ui-sidebar-right` |
 | `conversation.session.header.lineage` | `dsh-client-ui-conversation`, `dsh-client-ui-subagent` |
 | `conversation.session.header.utilities` | `dsh-client-ui-conversation`, `dsh-client-ui-open-in-app`, `dsh-client-ui-schedule` |
+| `conversation.session.header.views.actions` | `dsh-client-ui-conversation`, `dsh-client-ui-entry-customization` |
 | `conversation.trajectory.images` | `dsh-client-ui-attachment`, `dsh-client-ui-trajectory` |
+| `conversation.user.text.node` | `dsh-client-ui-conversation`, `dsh-client-ui-goal`, `dsh-client-ui-reference`, `dsh-client-ui-secret-mask`, `dsh-client-ui-skill` |
 | `conversation.view` | `dsh-client-ui-chat`, `dsh-client-ui-conversation`, `dsh-client-ui-trajectory` |
 
-### `settings.*`（12）
+### `settings.*`（13）
 
 | 槽位 | 声明包 |
 |---|---|
@@ -114,19 +127,21 @@
 | `settings.close` | `dsh-client-ui-settings-general` |
 | `settings.general.item` | `dsh-client-locale`, `dsh-client-ui-chat`, `dsh-client-ui-conversation`, `dsh-client-ui-permission-presets`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-session-log`, `dsh-client-ui-shortcuts`, `dsh-client-ui-theme` |
 | `settings.header` | `dsh-client-ui-settings-general` |
-| `settings.launcher` | `dsh-client-ui-settings-general` |
+| `settings.launcher` | `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general` |
 | `settings.models.footer` | `dsh-client-ui-settings-models` |
 | `settings.models.provider-card` | `dsh-client-ui-settings-models` |
-| `settings.models.sign-in` | `dsh-client-ui-settings-models` |
+| `settings.models.sign-in` | `dsh-client-ui-settings-account`, `dsh-client-ui-settings-models` |
 | `settings.onboarding` | `dsh-client-ui-settings-general`, `dsh-client-ui-settings-models` |
 | `settings.plugins.tab` | `dsh-client-ui-settings-plugin-inventory`, `dsh-client-ui-settings-plugins` |
-| `settings.section` | `dsh-client-ui-agent-preset`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-models`, `dsh-client-ui-settings-plugins` |
+| `settings.section` | `dsh-client-ui-agent-preset`, `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-models`, `dsh-client-ui-settings-plugins` |
+| `settings.section.icon` | `dsh-client-ui-settings-general` |
 | `settings.trigger` | `dsh-client-ui-settings-general` |
 
-### `plugins.*`（7）
+### `plugins.*`（9）
 
 | 槽位 | 声明包 |
 |---|---|
+| `plugins.add.actions` | `dsh-client-ui-agent-preset`, `dsh-client-ui-plugin-manager` |
 | `plugins.bundle.activation` | `dsh-client-ui-plugin-manager` |
 | `plugins.bundle.config` | `dsh-client-ui-plugin-manager` |
 | `plugins.detail.actions` | `dsh-client-ui-plugin-manager` |
@@ -134,13 +149,14 @@
 | `plugins.detail.section` | `dsh-client-ui-plugin-manager` |
 | `plugins.item` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-settings-agent-loop`, `dsh-client-ui-settings-shell`, `dsh-client-ui-settings-subagent`, `dsh-client-ui-settings-web-search` |
 | `plugins.row.config` | `dsh-client-ui-plugin-manager` |
+| `plugins.tab` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-plugin-market` |
 
 ### `tool.*`（3）
 
 | 槽位 | 声明包 |
 |---|---|
 | `tool.call.images` | `dsh-client-ui-attachment`, `dsh-client-ui-tool` |
-| `tool.call.toolview` | `dsh-client-ui-cordis`, `dsh-client-ui-deliverables`, `dsh-client-ui-skill`, `dsh-client-ui-tool` |
+| `tool.call.toolview` | `dsh-client-ui-action-cards`, `dsh-client-ui-cordis`, `dsh-client-ui-deliverables`, `dsh-client-ui-skill`, `dsh-client-ui-tool` |
 | `tool.view.cordis` | `dsh-client-ui-cordis` |
 
 ### `deliverables.*`（2）
@@ -155,6 +171,12 @@
 | 槽位 | 声明包 |
 |---|---|
 | `input.file` | `dsh-client-ui-conversation` |
+
+### `workspace.*`（1）
+
+| 槽位 | 声明包 |
+|---|---|
+| `workspace.toast` | `dsh-client-ui-workspace` |
 
 ### `main.*`（1）
 
@@ -174,9 +196,18 @@
 |---|---|
 | `command.label` | `dsh-client-ui-model-selection` |
 
-### `remote.*`（1）
+### `remote.*`（3）
 
 | 槽位 | 声明包 |
 |---|---|
+| `remote.actionCards` | `dsh-client-ui-action-cards` |
 | `remote.officeToPdf` | `dsh-client-ui-sidebar-documentpreview` |
+| `remote.pluginRecommendations` | `dsh-client-ui-plugin-recommendations` |
+
+### `contextMenu.*`（2）
+
+| 槽位 | 声明包 |
+|---|---|
+| `contextMenu.content` | `dsh-client-ui-context-menu`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-workspace` |
+| `contextMenu.icon` | `dsh-client-ui-context-menu`, `dsh-client-ui-file-actions`, `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-workspace` |
 

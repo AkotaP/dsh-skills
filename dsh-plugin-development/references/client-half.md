@@ -112,7 +112,7 @@ document.head.appendChild(style)
 
 ## 版本容错：核心升级时别整槽崩掉
 
-推荐做法：核心升级会重命名导出（例如 0.1.7 把带尺寸后缀的图标导出改成带字重后缀，`0.2.0` 仍为该命名），因此按"新旧名字都试、都缺就退回空组件"来取：
+推荐做法：核心升级会重命名导出（实测过：图标导出从带尺寸后缀改成带字重后缀；`MenuTarget` → `ContextMenuTarget`），因此按"新旧名字都试、都缺就退回空组件"来取：
 
 ```js
 const primitive = (legacy, current) =>
@@ -120,6 +120,8 @@ const primitive = (legacy, current) =>
 ```
 
 一个抛异常的组件会把**整个槽位条目**打崩（控制台 `slot entry crashed in '<slot>'`），所以宁可降级成不渲染。
+
+**当前版本的两处硬改动**（旧名没有兼容别名，容错包装也救不了）：右键菜单类型/hook/图标形式见 `version-compat.md` §4.2；`useAnchoredPosition` 与 `Menu.getAnchorRect` 将在后续版本移除，见 §4.5。
 
 **关于 `@deepseek-ai/dsh-client-ui-primitives`**：官方 skill 说"不要 require 任何 Harness 客户端包"，那是**保守基线**；真实插件为了和宿主长得一样确实会用它。可接受的折中是：写进 `dsh.client.inject`、**只读导出**、全部走上面的容错包装、升级时把它当"可能改名/可能消失"的东西。若不愿意承担这个耦合，就照官方建议把目标控件的结构/样式抄进自己插件（类名改成自己的前缀）。
 

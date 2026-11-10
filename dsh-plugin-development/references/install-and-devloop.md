@@ -54,17 +54,16 @@ $repo       = "<插件仓库绝对路径>"
 
 - `dsh-app-boot` 的 `bareModuleBaseUrl` 只特判 **cordis 条目名**从哪加载，**不管条目内部的 import**。
 - 链接安装下，仓库里的 `node_modules` 就是宿主解析用的那份；所以 `pnpm install` 要在**插件仓库**里也跑一次。
-- **`engines.dsh` / `@deepseek-ai/dsh*` peer 不是纯声明**：DSH `0.2.x` 会真实检查（`0.2.1+` 以 `engines.dsh` 优先，`0.2.0` 只查 peer），不满足时**安装被拒、启动时插件被禁用**。写法、版本差异与豁免见 `version-compat.md` §5。
+- **`engines.dsh` / `@deepseek-ai/dsh*` peer 不是纯声明**：DSH 会真实检查（写了 `engines.dsh` 就只看它，没写才回退看 peer），不满足时**安装被拒、启动时插件被禁用**。写法与豁免见 `version-compat.md` §5。
 
-生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；**宿主版本声明用 `engines.dsh`（`0.2.1+` 优先）并在 `peerDependencies["@deepseek-ai/dsh"]` 留同范围作 `0.2.0` 旧宿主回退**。
+生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；**宿主版本声明用 `engines.dsh`**；要兼容 `0.2.0` 旧宿主，再在 `peerDependencies["@deepseek-ai/dsh"]` 留同范围作回退。
 
 ## 开发循环：改哪半、怎么生效
 
 | 改了 | 生效方式 |
 |---|---|
 | `lib/client.js`（客户端半） | `dsh-client-hmr` 轮询入口产物（默认 `pollIntervalMs: 500`）发现 mtime/ctime/size 变化 → 重载该插件 bundle，**页面不用手动刷新**。React 状态会丢，数据层（会话/连接）保留。失败**不回滚**，会出现在插件列表里可重试。 |
-| `lib/index.js`（宿主半，`0.2.1-alpha.3+`） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入**内容**变化——改 profile patch 的内容（不是 touch）、改 bundles 列表、插件页开关/安装。**不需要重启，也不需要额外挂 `dsh-hmr`**。 |
-| `lib/index.js`（宿主半，`0.1.6-alpha.2` – `0.2.1-alpha.2`） | 只做**配置层**重组（`reconcileProfilePatches`），不发布新的运行时解析、已加载模块不比较不替换 → 改 `config`、开关已有插件行即时生效；**装新包、改已加载插件的代码**要重启。 |
+| `lib/index.js`（宿主半） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入**内容**变化——改 profile patch 的内容（不是 touch）、改 bundles 列表、插件页开关/安装。**不需要重启，也不需要额外挂 `dsh-hmr`**。 |
 | `cordis.patch.yml` 的 `config` | 保存即热重组（HMR 默认开）；设置页写入同样即时。 |
 | 源码检出（`packages/*`） | `pnpm run dev:web` 同时起宿主 + 重建 watcher；`--no-serve` 只挂 watcher 到别处起的宿主。 |
 
@@ -79,14 +78,14 @@ $repo       = "<插件仓库绝对路径>"
 
 **"改完 host 没观测到重组就说已生效"是最常见的假报告**——看插件页状态、宿主日志的 `restart required: <reason>` 与 `changed modules keep running their previous code` 警告，或直接打路由。
 
-### HMR 版本沿革（`hmr` 行一直在，能力在变）
+### HMR 行的现状
 
-| 版本 | `hmr` 行 | 重组能力 |
-|---|---|---|
-| `dsh-base` 0.0.1-rc.1 | `@deepseek-ai/cordis-plugin-hmr`，启用，`root: ['.']` | 模块源码监听（最早的 hot reload） |
-| `dsh-base` 0.1.5-rc.1 | 同上，`disabled: true`（注释：module reload is opt-in per profile；配置热重载由 launcher 的 watch-only fallback 承担，不依赖此行） | 需 profile 自选开启 |
-| `dsh-base` 0.1.6-alpha.2 – 0.2.1-alpha.2 | `@deepseek-ai/dsh-hmr`，`disabled: !!js "!ctx.get('profileContext')"`，`root: []` | 配置层重组（`reconcileProfilePatches`） |
-| `dsh-base` 0.2.1-alpha.3 起（含 rc.1/rc.2） | 同上 | 配置层 + `recomposeProfile()`：发布新运行时解析、替换磁盘上变过的已加载模块 |
+`dsh-base` 的 `hmr` 行（`@deepseek-ai/dsh-hmr`）默认在有 `profileContext` 时启用（`root: []` 表示不监听源码文件）。它的重组能力分两代，当前安装是后一代：
+
+| 能力 | 重组内容 |
+|---|---|
+| 配置层（`reconcileProfilePatches`） | 应用 patch 变化、开关条目；已加载模块不动 |
+| 配置层 + `recomposeProfile()`（`0.2.1-alpha.3` 起） | 额外发布新的运行时解析、替换磁盘上变过的已加载模块 → 装新包、改宿主半代码不用重启 |
 
 ### HMR 与重启边界
 

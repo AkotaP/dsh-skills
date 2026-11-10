@@ -8,9 +8,9 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 
 本 skill 补官方 `cordis-plugin-development` 的缺口：**官方流程假定 creator mode 工具存在**（`plugin_manager`、`cordis_inspect_*`），但 `ptc`/`standard` preset 并不挂载它们；官方文档中另有若干条命令在 Desktop profile 下实测不可用。
 
-> **版本敏感**：本 skill 编写基线为 DSH `0.1.7-rc.2`；复核时安装为 `0.2.0-rc.2`，再复核为 **`0.2.1-rc.2`**（客户端槽位 85 → 86，参考插件 30 条离线测试仍全绿）。**`0.2.1` 起 `engines.dsh` 会被真实校验，不满足会禁用插件**（见 `references/version-compat.md` §5）。下文标「实测」的结论都绑定具体版本，**升级后用 `references/version-compat.md` 重新核对，不要照搬**。
+> **版本敏感**：本 skill 当前基线为 **DSH `0.2.2-rc.1`**（客户端槽位 107 个，参考插件 30 条离线测试仍全绿）。**`engines.dsh` 会被真实校验，不满足会禁用插件**；0.2.x 已积累 5 条面向插件的破坏性改动——投影注册句柄化、右键菜单改名、投影 snapshot 范围、Loader 条目树/Include、CSS 锚定菜单，见 `references/version-compat.md` §4。下文标「实测」的结论都绑定该版本，**升级后重新核对，不要照搬**。
 >
-> **热重载不是 `0.2.1` 才有的**：`dsh-base` 的 `hmr` 行从 **`0.0.1-rc.1`** 就在（当时是 vendored 的 `@deepseek-ai/cordis-plugin-hmr`，`root: ['.']`，源码监听）；`0.1.5-rc.1` 里一度 `disabled: true`（改为按 profile 自选）；`0.1.6-alpha.2`（2026-09-17）起换成 `@deepseek-ai/dsh-hmr` 并在有 `profileContext` 时默认开启（`root: []`）。但两代能力不同：`0.1.6-alpha.2`–`0.2.1-alpha.2` 只做**配置层**重组，装新包与改宿主半代码仍要重启；**`0.2.1-alpha.3` 起**纳入 `recomposeProfile()`（发布新解析 + 替换变过的已加载模块），**装插件从此完全不需要重启**。版本沿革见 `references/install-and-devloop.md` §开发循环。
+> **热重载的现状**：`dsh-base` 的 `hmr` 行一直在，默认在有 `profileContext` 时启用（`root: []` 只表示不监听源码文件）。**`0.2.1-alpha.3` 起**它纳入 `recomposeProfile()`：除配置重组外还发布新的运行时解析、替换磁盘上变过的已加载模块——所以装插件、开关插件、改已加载插件（含 link 插件）的宿主半代码都**不需要重启**；例外清单见 `references/install-and-devloop.md` 的「HMR 与重启边界」。
 
 ## 0. 先分清四条路
 
@@ -25,7 +25,7 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
 
 ## 1. 事实基线（实测）
 
-- 版本不是常量：按 `references/version-compat.md` §1 读当前安装的 `desktop-runtime.json` 与各包 `package.json`（再复核时为 DSH `0.2.1-rc.2`、cordis `4.0.5`、schemastery `3.18.5`、Node `v24.21.0`；版本号会漂，以现场 `node_modules` 里的 `package.json` 为准）。
+- 版本不是常量：按 `references/version-compat.md` §1 读当前安装的 `desktop-runtime.json` 与各包 `package.json`（当前为 DSH `0.2.2-rc.1`、cordis `4.1.0`、schemastery `3.19.0`、Node `v24.21.0`；版本号会漂，以现场 `node_modules` 里的 `package.json` 为准）。
 - shell 中会注入 `DSH_HOME`（数据根目录，默认 `~/.dsh`）、`DSH_PROFILE`（当前 profile 名）、`DSH_PROFILE_DIR`（该 profile 目录）；未设置表示 harness 未以 profile 启动。通用取值方式见 `references/paths.md`。
 - **`dsh --profile desktop --dump-config` 在 Desktop profile 下失败**：`error: profile "desktop" is managed exclusively by the Electron application`。查看合成配置需改用 §5 的方式。
 - 官方包与安装同处一个 asar 归档，**位置随安装目录变化**，不要写死。**只有宿主进程自身的 `fs` 能读取**（例如 `run_code` 里的 `node:fs`）；`rg`/`glob`/`pwsh` 的 `ls`/`cat` 均报 `ENOENT`。定位方式与读取示例见 `references/paths.md`。查 API 优先读包目录下的 `README.md`，其次 `lib/index.js`（部分 build 不含 `lib/types`）。
@@ -33,9 +33,9 @@ whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cor
   - **宿主半** `lib/index.js`：普通 Node ESM，运行在 DSH 宿主进程内。
   - **客户端半** `lib/client.js`：浏览器 bundle，形如 `window.__ModuleLoader__.load({ id, factory })`。
   - **清单** `package.json` 的 `dsh.bundle.patch`（→ `cordis.patch.yml`）+ `dsh.client.*`。
-- 生效机制（`0.2.1` 实测）：
+- 生效机制（当前安装实测）：
   - **客户端半**：`dsh-client-hmr` 默认 500ms 轮询入口产物，按 mtime/ctime/size 判定 revision；同时经 `/plugins/events` SSE 推送插件图，**开着的页面不用手动刷新**。
-  - **宿主半（`0.2.1+` 实测）**：HMR 默认随 base bundle 启用（不需要额外挂载，`root: []` 只表示不监听源码文件）。profile 的 `package.json`（仅 `dsh.profile.bundles` 有序列表变化时）、profile `cordis.patch.yml`、home patch 都在监视列表里；任一变化触发一次**重组**，重组会停下受影响的 Loader 条目、驱逐已加载模块、按磁盘当前内容重新 import——所以**装插件、开关插件、改已加载插件（含 link 插件）的宿主半代码都不用重启**。`root: []` 下改源码文件本身不触发重组，保存一次 patch 或做一次插件页操作即可。
+  - **宿主半（实测）**：HMR 默认随 base bundle 启用（不需要额外挂载，`root: []` 只表示不监听源码文件）。profile 的 `package.json`（仅 `dsh.profile.bundles` 有序列表变化时）、profile `cordis.patch.yml`、home patch 都在监视列表里；任一变化触发一次**重组**，重组会停下受影响的 Loader 条目、驱逐已加载模块、按磁盘当前内容重新 import——所以**装插件、开关插件、改已加载插件（含 link 插件）的宿主半代码都不用重启**。`root: []` 下改源码文件本身不触发重组，保存一次 patch 或做一次插件页操作即可。
 
 ## 2. 最小可跑插件（四文件）
 
@@ -60,7 +60,7 @@ my-plugin/
   "private": true,
   "type": "module",
   "exports": { ".": "./index.js", "./client": "./client.js" },
-  "engines": { "node": ">=20", "dsh": ">=0.2.1-rc.2" },
+  "engines": { "node": ">=20", "dsh": ">=0.2.2" },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-conversation"] }
@@ -68,7 +68,7 @@ my-plugin/
 }
 ```
 
-`engines.dsh` 会被 DSH 真实检查（`0.2.1+` 优先，`0.2.0` 只查 `@deepseek-ai/dsh*` peer），不满足会禁用插件、拒绝安装；要兼容 `0.2.0` 旧宿主就在 `peerDependencies` 里再写同范围的 `@deepseek-ai/dsh`。详见 `references/version-compat.md` §5。
+`engines.dsh` 会被 DSH 真实检查（写了它就只看它，没写才回退看 `@deepseek-ai/dsh*` peer），不满足会禁用插件、拒绝安装；要兼容 `0.2.0` 旧宿主就在 `peerDependencies` 里再写同范围的 `@deepseek-ai/dsh`。详见 `references/version-compat.md` §5。
 
 `cordis.patch.yml`（行 id 必须与客户端 `configForms.get(id)` 一致）：
 
@@ -134,7 +134,7 @@ window.__ModuleLoader__.load({
 
 ## 2.6 多组件：独立开关与展示名称
 
-添加可选组件时，需分别确认 **宿主入口、独立客户端生命周期、插件页展示名称**。DSH `0.2.1-rc.2` 中，文件路径入口可加载子包客户端，但标题可能回退为完整文件 URL；包子路径也不能直接作为独立客户端包根。推荐使用主包真实依赖的具名子包，并通过 `bundledDependencies` 随包分发，导出中英文 `meta.title`。仅添加字段、子包目录或客户端翻译字典均不够。结构示例、版本边界及验收清单见[多组件打包与展示名称](references/multi-components.md)。
+添加可选组件时，需分别确认 **宿主入口、独立客户端生命周期、插件页展示名称**。实测（`0.2.1-rc.2`，未在 0.2.2 复核）：文件路径入口可加载子包客户端，但标题可能回退为完整文件 URL；包子路径也不能直接作为独立客户端包根。推荐使用主包真实依赖的具名子包，并通过 `bundledDependencies` 随包分发，导出中英文 `meta.title`。仅添加字段、子包目录或客户端翻译字典均不够。结构示例、版本边界及验收清单见[多组件打包与展示名称](references/multi-components.md)。
 
 ## 3. 装入 profile（手工路线）
 
@@ -221,7 +221,7 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 // node scripts/api-snapshot.mjs --diff before.json
 ```
 
-输出会列出**包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的三类依赖。完整流程（版本从哪读、官方有无 CHANGELOG、兼容写法、升级后回归清单）见 `references/version-compat.md`。插件声明的宿主版本（`engines.dsh` / peer）从 `0.2.1` 起会被真实检查，升级后先核对 `version-compat.md` §5。
+输出会列出**包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的三类依赖。完整流程（版本从哪读、官方有无 CHANGELOG、兼容写法、升级后回归清单）见 `references/version-compat.md`。插件声明的宿主版本（`engines.dsh` / peer）会被真实检查；`version-compat.md` §4 列了当前版本已生效的破坏性改动与迁移，§5 讲版本声明与豁免。
 
 ## Read next
 
@@ -231,11 +231,11 @@ harness 迭代很快，任何「实测」结论都会过期。升级前后各做
 | 宿主半：导出形态、inject 与 ctx.get、Config/volatile、路由、生命周期、错误约定 | `references/host-half.md` |
 | 客户端半：模块格式、slots 注册、**配置 UI 放哪儿（设置分区 / 插件页四槽位）**、locale、CSS、热更、版本容错 | `references/client-half.md` |
 | 多组件独立开关、具名子包、展示元信息、发布包验收及平滑升级 | [multi-components.md](references/multi-components.md) |
-| 真实槽位清单（实测 86 个，含声明包）与发现方法 | `references/slots.md` |
+| 真实槽位清单（实测 107 个，含声明包）与发现方法 | `references/slots.md` |
 | volatile 配置通道：宿主 schema + 客户端 configForms 读写与报错 | `references/config-channel.md` |
 | 两条安装路线、依赖解析不对称、HMR 与何时需要重启、发版、回滚 | `references/install-and-devloop.md` |
 | 离线测试 harness 的写法、断言范围、沙箱下的跑法 | `references/testing.md` |
 | 加载、生命周期、打包、测试及环境问题清单 | `references/pitfalls.md` |
-| 版本怎么读、插件声明的宿主版本如何被检查/豁免、升级前后怎么对齐 | `references/version-compat.md` |
+| 版本怎么读、**当前版本的破坏性改动与迁移**、宿主版本检查与豁免、升级前后怎么对齐 | `references/version-compat.md` |
 | 生成最小插件骨架 | `scripts/scaffold-plugin.mjs` |
 | 采集/对比 API 表面（版本、槽位、服务） | `scripts/api-snapshot.mjs` |
