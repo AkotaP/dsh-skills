@@ -28,10 +28,10 @@
 
 ## 环境相关（官方 skill 未覆盖）
 
-16. **`dsh --profile desktop --dump-config` 在 Desktop profile 下失败**：`error: profile "desktop" is managed exclusively by the Electron application`。Desktop profile 只能靠读 bundle patch + profile patch 或 UI 插件页来看合成结果。
-17. **默认 preset 是 `ptc`，没有 `plugin_manager` / `cordis_inspect_*`**。照官方 `cordis-plugin-development` 的流程直接找这两个工具会卡住——要么切 `cordis` preset，要么走手工 link 路线（`install-and-devloop.md` §B）。
+16. **`dsh --profile desktop --dump-config` 与 `dsh plugin --profile desktop …` 在 Desktop profile 下都失败**：`error: profile "desktop" is managed exclusively by the Electron application`（`args.ts` 里的 `rejectElectronProfile`，只有 Electron 载体自己调用时放行）。Desktop profile 只能靠读 bundle patch + profile patch、UI 插件页、或 `plugin_manager` 来改/看合成结果。
+17. **默认 preset 是 `ptc`，没有 `plugin_manager` / `cordis_inspect_*`**。照官方插件流程直接找这两个工具会卡住——要么切 `cordis` preset，要么走手工路线（`install-and-devloop.md` §B）。`0.2.2-rc.2` 起官方 skill 叫 `dsh-doc`（旧四件套已删，按旧名加载会失败）。
 18. **`node --test` 在 DSH 沙箱下报 `spawn EPERM`**（子进程管道被禁）。加 `--test-isolation=none` 进程内跑即通过。
-19. **asar 里的官方源码只有宿主进程自己的 `fs` 读得动**：`rg`/`glob`/`pwsh` 的 `ls`/`cat`/`cp` 全部 `ENOENT`。要用 `run_code` 里的 `node:fs`，按 `paths.md` §2 定位包目录后再读，不要拼某个固定安装路径。
+19. **asar 里的文件用普通 shell 工具读不到**：`rg`/`glob`/`pwsh` 的 `ls`/`cat`/`cp` 全部 `ENOENT`。能读的三条路：`run_code` 的 `node:fs`、宿主 read 工具、shell 里 `ELECTRON_RUN_AS_NODE=1 $DSH_NODE_EXECUTABLE` 跑脚本（结果写文件）。按 `paths.md` §2–§3 定位，不要拼固定安装路径。
 20. **patch 覆盖语义**：带 `id` 无 `insert` 是**整体替换**该行，`config` **不深合并**；覆盖官方行时必须把该行需要的字段全部重述。非 `insert` 且无 `id` 的条目会被警告并跳过。
 
 ## 写测试时的坑
@@ -56,3 +56,10 @@
 32. **依赖缓存升级或安装中断，被误判为插件故障** → 包管理器版本、registry 或缓存布局变化可能使旧 lockfile 的离线校验失败；安装超时也可能已移除部分 `node_modules` 链接。先检查进程、原版本与现有链接，再决定修复范围；恢复后重跑构建和完整测试，不默认清空依赖、升级无关包或关闭供应链校验。手工工作区链接不能代替可复现的依赖声明与发布验证。
 33. **把只读归档检查当成完成部署验证** → Windows 沙箱可能在路径规范化或解包检查阶段拒绝访问。归档读取、落盘解包、干净环境安装和 GUI 观察是不同层次；受阻时说明已验证范围，不为附加检查移除安全过滤或悄悄扩大权限。真正的工作区访问异常按对应权限诊断流程处理。
 34. **用 Desktop 宿主的 `process.execPath` 猜 Node CLI** → 它可能指向 Electron 程序。构建或测试应使用已确认的 Node 可执行文件，避免误启动宿主程序。
+
+## 实测补充（DSH `0.2.2-rc.2`）
+
+35. **把 `dsh.client.inject` 当成 Cordis 服务注入** → 客户端插件里 `ctx.get('contextMenus')` 拿到 `undefined`，菜单/配置面板"看着装了但不生效"。`dsh.client.inject` 只是**包名依赖边**；服务注入写在 `return { inject: [...] }`。反过来，**超出基线模块表**的 require 没写进 `dsh.client.external` 时，浏览器侧直接抛错、整个客户端半不加载。
+36. **还在用 `useAnchoredPosition` / `Menu.getAnchorRect` / `ctx.menus` / `MenuTarget`** → `0.2.2-rc.2` 已全部删除（不是弃用）。表现为 `undefined is not a function`、菜单错位或干脆不出现。改用 CSS 锚点 / `anchorRef` / `anchorPoint`、`ctx.contextMenus`、`ContextMenuTarget*`，见 `version-compat.md` §4.2 / §4.5。
+37. **在 shell 里用管道抓子进程输出**（`$out = & $exe ...`、`Start-Process -RedirectStandardOutput` 到管道）→ 沙箱拒命名管道：`Access to the path '\\.\pipe\...' is denied` / `EPERM`。让子进程把结果**写文件**再 `Get-Content`；`node --test` 同理加 `--test-isolation=none`。
+38. **拿旧版槽位清单当全集** → `0.2.2-rc.1 → rc.2` 就消失了 `command.label`、`input.file`、`remote.*` 五个名字（注册即 throw），区域级 `root`/`main`/`sidebar`/`rightbar` 又是老扫描漏掉的。查槽位以安装内 `slot-catalog.ts` 为准，见 `slots.md` §0。

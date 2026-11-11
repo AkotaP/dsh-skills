@@ -2,212 +2,236 @@
 
 槽位是宿主页面预留的扩展位；插件**注册进**已声明的槽位，不能自造槽位名。
 
-## 如何找到"对的槽位"
+## 0. 权威来源：随安装发布的 slot 目录（`0.2.2-rc.2` 起）
 
-1. **有 creator mode 时**（工具表里有 `cordis_inspect_query`）：查 `Slots` provider，用 `Slots.listSubTree` 看目标槽位子树、注册选项与 props。这是官方推荐路径，也最准。
-2. **没有 creator mode 时**：
-   - 用下文的清单（程序化扫描生成，见文件末尾说明）。
-   - 读声明包的 `README.md` 与 `lib/client.js`（包目录的定位方式见 `paths.md`），搜槽位名即可看到它声明在哪里、传什么 props。
-3. **抄同类的官方做法**：要加"管理列表里的东西"就照 Plugin 管理页；要加"会话行按钮"就照官方 archive/pin 的 order 与结构。
-4. **判断一个名字存不存在要用 `ctx.slots.spec(name)`，别把下面的清单当全集**：清单收的是"当前 build 里真实出现过的注册目标"；而插件常把某个槽位名当**可选父槽**去 `inject`，那个名字在当前 harness 里可能一个字母都不存在——此时回调只是永不执行（安全，不 throw）。所以：清单里没有 ≠ 名字写错；清单里有 ≠ 一定能注册成功（还要看自己的客户端依赖有没有加载）。
+这份安装里带一份**生成的槽位契约目录**，比从 bundle 里正则捞字符串准得多：
 
-## 选槽位的纪律
+- 文件：`<安装>/node_modules/@deepseek-ai/dsh-cordis-client-runner/src/client/slot-catalog.ts`（导出 `CLIENT_SLOT_API`；`lib/client.js` 里是同一份数据）。由 `scripts/gen-client-catalog.ts` 生成、由 doc-sync 的 `verify-client-catalog` 把关，因此与当前 bundle 的编译期契约一致。
+- 每条给出：`key`、`kind`（`single` / `list` / `keyed` / `chain` / `hoc`）、`scope`（`root` / `session` / `session-maybe`）、`registerOptions`（含 `required` / `optional`）、`ownerProps`、`standardProps`、`keyDomain`、`hookContext`、`slotInject`、`declaredBy`、`occupants`、`replaceRisk`、`example`、`source`。
+- 运行时等价物：creator mode 的 `cordis_inspect_query`（`what:"client"`）返回的就是这份目录——**有 inspect 用 inspect，没有就读上面那个文件**。
+- 读取方式：`run_code` 里直接 `fs.readFileSync`（asar 可读），或用 shell 的 `ELECTRON_RUN_AS_NODE=1` + `$DSH_NODE_EXECUTABLE` 跑脚本（见 `paths.md` §3）。整份约 5800 行，**不要整读**：按 `key: '<槽位名>'` 定位，再读同一条目里的字段。
 
-- **选本来就分配了空间的槽位**（`conversation.composer.dock`、`settings.section`、`shell.overlay`…），不要用绝对定位压在宿主控件上。
-- **不要读其他插件的 DOM/样式表**来猜位置。
+第 5 节的清单是这份目录在 `0.2.2-rc.2` 的静态抄本（114 条），用于快速检索；**升级后以目录为准**。
+
+## 1. 用目录回答四个问题
+
+| 问题 | 看哪个字段 |
+|---|---|
+| 这个名字存在吗 | 目录里有没有这条；再不行用 `ctx.slots.spec(name)` |
+| 注册必须传什么 | `registerOptions` 的 `requirement`（`id` / `key` / `select` 视 kind 而定） |
+| 谁让它存在、什么时候能用 | `declaredBy`——槽位只在声明者挂载时存在，注册进未声明的槽位会 **throw** |
+| 我的组件收到什么 | `ownerProps`（声明者传下的 props）+ `standardProps`（框架 hook，如 `useSessions`）+ `hookContext` |
+
+## 2. 选槽位的纪律
+
+- **选本来就分配了空间的槽位**（`conversation.composer.dock`、`settings.section`、`shell.overlay`…），不要用绝对定位压在宿主控件上。官方 UI 插件模板默认就用 `conversation.composer.dock`。
+- **看 `replaceRisk`**：`shadows-shipped-ui` 表示注册即**顶替**宿主现有 UI（`root`、`main`、`sidebar`、`rightbar` 这类区域级 single/keyed 槽位尤其如此）；除非你就是要替换，否则选 `none`（追加）的 list / hoc / chain 槽位。
+- `keyed` 槽位先看 `keyDomain`：已占用的 key 会被你的注册替换，别误占官方 key。
+- 不要读其他插件的 DOM/样式表来猜位置。
 - 需要浮层（弹窗/提示）时用 `shell.overlay`（frame 级），**不要**挂在会卸载的容器里。
-- `order` 决定同槽位内顺序：官方在侧边栏行操作用 100/200（archive/pin），新条目取 300 即排在其后；「…」菜单官方用到 400，新条目取 450。
+- `order` 决定同槽位内顺序：官方侧边栏行操作用 100/200（archive/pin），新条目取 300 即排在其后；「…」菜单官方用到 400，新条目取 450。
+- `ctx.slots.inject(ownerSlot, cb)` 的 `cb` 在声明者挂载/卸载时重跑，注册随之销毁/重建——把 `register` 写在 `cb` 里。
 
-## 典型注册示例（槽位与顺序）
+## 3. 典型注册示例
 
-| 用途 | 槽位 | id / order |
+| 用途 | 槽位 | 注册选项 |
 |---|---|---|
-| 设置页一个分区 | `settings.section` | `my-plugin-settings` / 200（配 `label` + `locale`） |
-| 会话标题栏按钮 | `conversation.session.header.actions` | `my-plugin-action` / 300 |
-| 侧边栏会话行悬停按钮 | `sidebar.workspaces.session.row.action` | 同上 / 300 |
-| 「…」菜单项 | `sidebar.workspaces.session.menu.item` | 同上 / 450 |
-| 确认弹窗 | `shell.overlay` | `my-plugin-confirm` / 200 |
+| 设置页一个分区 | `settings.section` | `id` + `order` + `label` + `locale` |
+| 插件页自己的配置 | `plugins.bundle.config` | `key` = **包名** + `locale` |
+| 插件页某一行配置 | `plugins.row.config` | `key` = `'<包名>#<行 id>'` |
+| 会话标题栏按钮 | `conversation.session.header.actions` | `id` + `order` |
+| 输入框下方装饰 | `conversation.composer.dock` | `id` + `order` |
+| 用户消息前的装饰 | `conversation.chat.user.before`（chain） | `select` + `id` |
+| 确认弹窗 | `shell.overlay` | `id` + `order` |
+| 右键菜单**数据项** | 不用槽位，改用 `ctx.contextMenus.register`（见 `client-half.md`） | — |
+| 右键菜单图标 | `contextMenu.icon`（keyed） | `key` = 动作的 icon key |
 
-## 清单
+## 4. 相对 `0.2.2-rc.1` 清单的差异
 
-> **版本敏感**：本清单采集自 **`0.2.2-rc.1`**，共 **107** 个槽位（上一版 `0.2.0-rc.2` 为 86 个）。**升级 harness 后请重新采集**——用 `scripts/api-snapshot.mjs` 做前后 diff 最省事。
->
-> 生成方式：扫描安装自带 `@deepseek-ai/dsh-client-*` 各包的 `lib/**/*.js`，取注册/注入/渲染调用点里的字符串，只保留槽位名与声明包名。它代表"该 build 里真实出现过的槽位名"，不等于类型声明全集。
+**新增 12 条**：`conversation.chat.markdown.fence`、`conversation.chat.user.before`、`conversation.hero.frame`、`conversation.input.model.options`、`conversation.session.header.actions.subagent.footer`、`settings.launcher.notifications`、`sidebar.right.tab.document.office.pdf`、`sidebar.right.tab.guide`，以及区域级 `root` / `main` / `sidebar` / `rightbar`（旧清单靠正则扫 bundle，把单词形式的槽位漏了）。
 
-### `shell.*`（4）
+**消失 5 条**：`command.label`、`input.file`、`remote.actionCards`、`remote.officeToPdf`、`remote.pluginRecommendations`——用这些名字的插件现在注册会直接 throw。
 
-| 槽位 | 声明包 |
+## 5. 清单（`0.2.2-rc.2`，114 条）
+
+| 标记 | 含义 |
 |---|---|
-| `shell.bottom` | `dsh-client-ui-layout` |
-| `shell.leading` | `dsh-client-ui-layout`, `dsh-client-ui-sidebar` |
-| `shell.overlay` | `dsh-client-ui-chat`, `dsh-client-ui-context-menu`, `dsh-client-ui-file-drag`, `dsh-client-ui-layout`, `dsh-client-ui-open-in-app`, `dsh-client-ui-plugin-manager`, `dsh-client-ui-schedule`, `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-session-log`, `dsh-client-ui-shortcuts`, `dsh-client-ui-workspace` |
-| `shell.quota-notice` | `dsh-client-ui-settings-account` |
+| ⚠ 顶替 | `replaceRisk: shadows-shipped-ui`：注册即替换宿主现有 UI |
+| ~ 包裹 | `replaceRisk: wraps-owner-content`：你的组件包裹宿主内容，`children` 至多渲染一次 |
+| — 追加 | `replaceRisk: none`：纯追加 |
 
-### `sidebar.*`（25）
+### `(区域级)`（4）
 
-| 槽位 | 声明包 |
-|---|---|
-| `sidebar.brand.mark` | `dsh-client-ui-brand-official`, `dsh-client-ui-sidebar` |
-| `sidebar.brand.name` | `dsh-client-ui-brand-official`, `dsh-client-ui-sidebar` |
-| `sidebar.chat.conversation` | `dsh-client-ui-subagent` |
-| `sidebar.footer.action` | `dsh-client-ui-cordis`, `dsh-client-ui-sidebar` |
-| `sidebar.panellist` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar` |
-| `sidebar.panellist.actions` | `dsh-client-ui-entry-customization`, `dsh-client-ui-sidebar` |
-| `sidebar.right.pane.tab` | `dsh-client-ui-deliverables`, `dsh-client-ui-plan`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar-browser`, `dsh-client-ui-sidebar-documentpreview`, `dsh-client-ui-sidebar-files`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal`, `dsh-client-ui-subagent` |
-| `sidebar.right.pane.tab.title` | `dsh-client-ui-plan`, `dsh-client-ui-schedule`, `dsh-client-ui-sidebar-browser`, `dsh-client-ui-sidebar-documentpreview`, `dsh-client-ui-sidebar-files`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal` |
-| `sidebar.right.tab.document` | `dsh-client-ui-sidebar-documentpreview` |
-| `sidebar.right.tab.document.action` | `dsh-client-ui-sidebar-documentpreview` |
-| `sidebar.right.tab.document.actions` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-documentpreview` |
-| `sidebar.right.tab.document.unpreviewable` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-documentpreview` |
-| `sidebar.right.tab.files.actions` | `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-files` |
-| `sidebar.right.tab.guide.actions` | `dsh-client-ui-entry-customization`, `dsh-client-ui-sidebar-right` |
-| `sidebar.right.tab.guide.entry` | `dsh-client-ui-sidebar-right`, `dsh-client-ui-sidebar-terminal` |
-| `sidebar.right.tab.menu.item` | `dsh-client-ui-sidebar-right` |
-| `sidebar.session.row.hover` | `dsh-client-ui-schedule`, `dsh-client-ui-workspace` |
-| `sidebar.session.row.leading` | `dsh-client-ui-schedule`, `dsh-client-ui-workspace` |
-| `sidebar.session.row.trailing` | `dsh-client-ui-workspace` |
-| `sidebar.settings` | `dsh-client-ui-settings-general`, `dsh-client-ui-sidebar` |
-| `sidebar.toggle.badge` | `dsh-client-ui-settings-general`, `dsh-client-ui-sidebar` |
-| `sidebar.workspaces` | `dsh-client-ui-sidebar`, `dsh-client-ui-workspace` |
-| `sidebar.workspaces.directoryFlow` | `dsh-client-ui-directory-picker-browse`, `dsh-client-ui-directory-picker-native`, `dsh-client-ui-workspace` |
-| `sidebar.workspaces.session.menu.item` | `dsh-client-ui-workspace` |
-| `sidebar.workspaces.session.row.action` | `dsh-client-ui-workspace` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `main` | keyed / root | client-ui-layout（经 `root` 条目） | ⚠ 顶替 |
+| `rightbar` | single / root | client-ui-layout（经 `root` 条目） | ⚠ 顶替 |
+| `root` | single / root | 运行时内置（恒存在） | ⚠ 顶替 |
+| `sidebar` | single / root | client-ui-layout（经 `root` 条目） | ⚠ 顶替 |
 
-### `conversation.*`（41）
+### `shell`（4）
 
-| 槽位 | 声明包 |
-|---|---|
-| `conversation.approval.detail` | `dsh-client-ui-approval`, `dsh-client-ui-chat` |
-| `conversation.chat.assistant-actions` | `dsh-client-ui-chat`, `dsh-client-ui-message-feedback` |
-| `conversation.chat.commandview` | `dsh-client-ui-chat` |
-| `conversation.chat.flow` | `dsh-client-ui-chat` |
-| `conversation.chat.message.images` | `dsh-client-ui-attachment`, `dsh-client-ui-chat` |
-| `conversation.chat.node` | `dsh-client-ui-chat`, `dsh-client-ui-goal`, `dsh-client-ui-tool`, `dsh-client-ui-user-questions`, `dsh-client-ui-workflow-run` |
-| `conversation.chat.reasoning.body` | `dsh-client-ui-chat` |
-| `conversation.chat.text-interaction` | `dsh-client-ui-chat` |
-| `conversation.chat.turnTail` | `dsh-client-ui-action-cards`, `dsh-client-ui-chat`, `dsh-client-ui-deliverables`, `dsh-client-ui-plan`, `dsh-client-ui-schedule` |
-| `conversation.chat.user.images` | `dsh-client-ui-attachment`, `dsh-client-ui-chat` |
-| `conversation.composer` | `dsh-client-ui-approval`, `dsh-client-ui-subagent`, `dsh-client-ui-user-questions` |
-| `conversation.composer.bar` | `dsh-client-ui-conversation` |
-| `conversation.composer.dock` | `dsh-client-ui-chat`, `dsh-client-ui-conversation` |
-| `conversation.header` | `dsh-client-ui-conversation` |
-| `conversation.header.leading` | `dsh-client-ui-conversation` |
-| `conversation.hero.agentPreset` | `dsh-client-ui-agent-preset`, `dsh-client-ui-conversation` |
-| `conversation.hero.brand.mark` | `dsh-client-ui-conversation` |
-| `conversation.hero.options` | `dsh-client-ui-conversation` |
-| `conversation.hero.workspace` | `dsh-client-ui-conversation`, `dsh-client-ui-workspace` |
-| `conversation.hero.workspace.directoryFlow` | `dsh-client-ui-directory-picker-browse`, `dsh-client-ui-directory-picker-native`, `dsh-client-ui-workspace` |
-| `conversation.input.activity` | `dsh-client-ui-conversation` |
-| `conversation.input.attachments` | `dsh-client-ui-attachment`, `dsh-client-ui-conversation` |
-| `conversation.input.dock` | `dsh-client-ui-conversation`, `dsh-client-ui-goal` |
-| `conversation.input.left` | `dsh-client-ui-conversation` |
-| `conversation.input.model` | `dsh-client-ui-conversation`, `dsh-client-ui-model-selection` |
-| `conversation.input.model.label` | `dsh-client-ui-model-selection` |
-| `conversation.input.overlay` | `dsh-client-ui-commands`, `dsh-client-ui-conversation`, `dsh-client-ui-input-trigger`, `dsh-client-ui-message-feedback` |
-| `conversation.input.permission` | `dsh-client-ui-conversation`, `dsh-client-ui-permission-presets` |
-| `conversation.input.plan` | `dsh-client-ui-conversation`, `dsh-client-ui-plan` |
-| `conversation.input.right` | `dsh-client-ui-conversation` |
-| `conversation.plan-review.actions` | `dsh-client-ui-plan`, `dsh-client-ui-user-questions` |
-| `conversation.session` | `dsh-client-ui-conversation`, `dsh-client-ui-subagent` |
-| `conversation.session.header` | `dsh-client-ui-conversation` |
-| `conversation.session.header.actions` | `dsh-client-ui-agent-preset`, `dsh-client-ui-conversation`, `dsh-client-ui-jobs`, `dsh-client-ui-subagent` |
-| `conversation.session.header.corner` | `dsh-client-ui-conversation`, `dsh-client-ui-sidebar-right` |
-| `conversation.session.header.lineage` | `dsh-client-ui-conversation`, `dsh-client-ui-subagent` |
-| `conversation.session.header.utilities` | `dsh-client-ui-conversation`, `dsh-client-ui-open-in-app`, `dsh-client-ui-schedule` |
-| `conversation.session.header.views.actions` | `dsh-client-ui-conversation`, `dsh-client-ui-entry-customization` |
-| `conversation.trajectory.images` | `dsh-client-ui-attachment`, `dsh-client-ui-trajectory` |
-| `conversation.user.text.node` | `dsh-client-ui-conversation`, `dsh-client-ui-goal`, `dsh-client-ui-reference`, `dsh-client-ui-secret-mask`, `dsh-client-ui-skill` |
-| `conversation.view` | `dsh-client-ui-chat`, `dsh-client-ui-conversation`, `dsh-client-ui-trajectory` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `shell.bottom` | single / root | client-ui-layout（经 `root` 条目） | ⚠ 顶替 |
+| `shell.leading` | single / root | client-ui-layout（经 `root` 条目） | ⚠ 顶替 |
+| `shell.overlay` | list / root | client-ui-layout（经 `root` 条目） | — 追加 |
+| `shell.quota-notice` | chain / root | client-ui-chat（经 `shell.overlay` 条目） | — 追加 |
 
-### `settings.*`（13）
+### `sidebar`（27）
 
-| 槽位 | 声明包 |
-|---|---|
-| `settings.action` | `dsh-client-ui-settings-general` |
-| `settings.close` | `dsh-client-ui-settings-general` |
-| `settings.general.item` | `dsh-client-locale`, `dsh-client-ui-chat`, `dsh-client-ui-conversation`, `dsh-client-ui-permission-presets`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-session-log`, `dsh-client-ui-shortcuts`, `dsh-client-ui-theme` |
-| `settings.header` | `dsh-client-ui-settings-general` |
-| `settings.launcher` | `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general` |
-| `settings.models.footer` | `dsh-client-ui-settings-models` |
-| `settings.models.provider-card` | `dsh-client-ui-settings-models` |
-| `settings.models.sign-in` | `dsh-client-ui-settings-account`, `dsh-client-ui-settings-models` |
-| `settings.onboarding` | `dsh-client-ui-settings-general`, `dsh-client-ui-settings-models` |
-| `settings.plugins.tab` | `dsh-client-ui-settings-plugin-inventory`, `dsh-client-ui-settings-plugins` |
-| `settings.section` | `dsh-client-ui-agent-preset`, `dsh-client-ui-settings-account`, `dsh-client-ui-settings-general`, `dsh-client-ui-settings-models`, `dsh-client-ui-settings-plugins` |
-| `settings.section.icon` | `dsh-client-ui-settings-general` |
-| `settings.trigger` | `dsh-client-ui-settings-general` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `sidebar.brand.mark` | single / root | client-ui-sidebar（经 `sidebar` 条目） | ⚠ 顶替 |
+| `sidebar.brand.name` | single / root | client-ui-sidebar（经 `sidebar` 条目） | ⚠ 顶替 |
+| `sidebar.chat.conversation` | single / session | client-ui-subagent（经 `sidebar.right.pane.tab` 条目） | ⚠ 顶替 |
+| `sidebar.footer.action` | list / root | client-ui-sidebar（经 `sidebar` 条目） | — 追加 |
+| `sidebar.panellist` | list / root | client-ui-sidebar（组件工厂 `sidebar.panel.icon`） | — 追加 |
+| `sidebar.panellist.actions` | list / root | client-ui-sidebar（经 `sidebar` 条目） | — 追加 |
+| `sidebar.right.pane.tab` | keyed / session | client-ui-sidebar-right（经 `rightbar.session` 条目） | — 追加 |
+| `sidebar.right.pane.tab.title` | keyed / session | client-ui-sidebar-right（经 `rightbar.session` 条目） | — 追加 |
+| `sidebar.right.tab.document` | keyed / session | client-ui-sidebar-documentpreview（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.document.action` | keyed / session | client-ui-sidebar-documentpreview（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.document.actions` | list / session | client-ui-sidebar-documentpreview（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.document.office.pdf` | keyed / session | client-ui-sidebar-documentpreview（经 `sidebar.right.tab.document` 条目） | — 追加 |
+| `sidebar.right.tab.document.unpreviewable` | list / session | client-ui-sidebar-documentpreview（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.files.actions` | list / session | client-ui-sidebar-files（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.guide` | chain / session | client-ui-sidebar-right（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.guide.actions` | list / root | client-ui-sidebar-right（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.guide.entry` | keyed / session | client-ui-sidebar-right（经 `sidebar.right.pane.tab` 条目） | — 追加 |
+| `sidebar.right.tab.menu.item` | list / session | client-ui-sidebar-right（经 `contextMenu.content` 条目） | — 追加 |
+| `sidebar.session.row.hover` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
+| `sidebar.session.row.leading` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
+| `sidebar.session.row.trailing` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
+| `sidebar.settings` | single / root | client-ui-sidebar（经 `sidebar` 条目） | ⚠ 顶替 |
+| `sidebar.toggle.badge` | single / root | client-ui-sidebar（经 `sidebar` 条目） | ⚠ 顶替 |
+| `sidebar.workspaces` | single / root | client-ui-sidebar（经 `sidebar` 条目） | ⚠ 顶替 |
+| `sidebar.workspaces.directoryFlow` | single / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | ⚠ 顶替 |
+| `sidebar.workspaces.session.menu.item` | list / root | client-ui-workspace（经 `contextMenu.content` 条目） | — 追加 |
+| `sidebar.workspaces.session.row.action` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
 
-### `plugins.*`（9）
+### `conversation`（46）
 
-| 槽位 | 声明包 |
-|---|---|
-| `plugins.add.actions` | `dsh-client-ui-agent-preset`, `dsh-client-ui-plugin-manager` |
-| `plugins.bundle.activation` | `dsh-client-ui-plugin-manager` |
-| `plugins.bundle.config` | `dsh-client-ui-plugin-manager` |
-| `plugins.detail.actions` | `dsh-client-ui-plugin-manager` |
-| `plugins.detail.badge` | `dsh-client-ui-plugin-manager` |
-| `plugins.detail.section` | `dsh-client-ui-plugin-manager` |
-| `plugins.item` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-settings-agent-loop`, `dsh-client-ui-settings-shell`, `dsh-client-ui-settings-subagent`, `dsh-client-ui-settings-web-search` |
-| `plugins.row.config` | `dsh-client-ui-plugin-manager` |
-| `plugins.tab` | `dsh-client-ui-plugin-manager`, `dsh-client-ui-plugin-market` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `conversation.approval.detail` | single / session | client-ui-approval（组件工厂 `conversation.approval.card`） | ⚠ 顶替 |
+| `conversation.chat.assistant-actions` | list / session | client-ui-chat（经 `conversation.chat.node` 条目） | — 追加 |
+| `conversation.chat.commandview` | keyed / session | client-ui-chat（经 `conversation.chat.node` 条目） | ⚠ 顶替 |
+| `conversation.chat.flow` | single / session | client-ui-chat（经 `conversation.view` 条目） | ⚠ 顶替 |
+| `conversation.chat.markdown.fence` | hoc / session | client-ui-chat（经 `conversation.view` 条目） | ~ 包裹 |
+| `conversation.chat.message.images` | single / session | client-ui-chat（经 `conversation.chat.node` 条目） | ⚠ 顶替 |
+| `conversation.chat.node` | keyed / session | client-ui-chat（经 `conversation.chat.flow` 条目） | ⚠ 顶替 |
+| `conversation.chat.reasoning.body` | single / session | client-ui-chat（经 `conversation.chat.node` 条目） | ⚠ 顶替 |
+| `conversation.chat.text-interaction` | keyed / session | client-ui-chat（经 `conversation.view` 条目） | ⚠ 顶替 |
+| `conversation.chat.turnTail` | list / session | client-ui-chat（经 `conversation.chat.node` 条目） | — 追加 |
+| `conversation.chat.user.before` | chain / session | client-ui-chat（经 `conversation.chat.node` 条目） | — 追加 |
+| `conversation.chat.user.images` | single / session | client-ui-chat（组件工厂 `conversation.chat.user.content`） | ⚠ 顶替 |
+| `conversation.composer` | chain / session | client-ui-conversation（组件工厂 `conversation.content`） | — 追加 |
+| `conversation.composer.bar` | single / session-maybe | client-ui-conversation（组件工厂 `conversation.content`） | ⚠ 顶替 |
+| `conversation.composer.dock` | list / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | — 追加 |
+| `conversation.header` | single / session-maybe | client-ui-conversation（经 `main.conversation` 条目） | ⚠ 顶替 |
+| `conversation.header.leading` | single / root | client-ui-conversation（经 `conversation.header` 条目） | — 追加 |
+| `conversation.hero.agentPreset` | single / session-maybe | client-ui-conversation（组件工厂 `conversation.content`） | ⚠ 顶替 |
+| `conversation.hero.brand.mark` | single / root | client-ui-conversation（组件工厂 `conversation.content`） | — 追加 |
+| `conversation.hero.frame` | hoc / root | client-ui-conversation（组件工厂 `conversation.content`） | ~ 包裹 |
+| `conversation.hero.options` | list / session | client-ui-conversation（组件工厂 `conversation.content`） | — 追加 |
+| `conversation.hero.workspace` | single / root | client-ui-conversation（组件工厂 `conversation.content`） | ⚠ 顶替 |
+| `conversation.hero.workspace.directoryFlow` | single / root | client-ui-workspace（经 `conversation.hero.workspace` 条目） | ⚠ 顶替 |
+| `conversation.input.activity` | single / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | ⚠ 顶替 |
+| `conversation.input.attachments` | single / session-maybe | client-ui-conversation（经 `conversation.composer.bar` 条目） | ⚠ 顶替 |
+| `conversation.input.dock` | list / session | client-ui-conversation（组件工厂 `conversation.content`） | — 追加 |
+| `conversation.input.left` | list / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | — 追加 |
+| `conversation.input.model` | single / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | ⚠ 顶替 |
+| `conversation.input.model.label` | single / session | client-ui-model-selection（经 `conversation.input.model` 条目） | — 追加 |
+| `conversation.input.model.options` | list / session | client-ui-model-selection（经 `conversation.input.model` 条目） | — 追加 |
+| `conversation.input.overlay` | list / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | — 追加 |
+| `conversation.input.permission` | single / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | ⚠ 顶替 |
+| `conversation.input.plan` | single / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | ⚠ 顶替 |
+| `conversation.input.right` | list / session | client-ui-conversation（经 `conversation.composer.bar` 条目） | — 追加 |
+| `conversation.plan-review.actions` | list / session | client-ui-user-questions（经 `conversation.composer` 条目） | — 追加 |
+| `conversation.session` | single / session | client-ui-conversation（组件工厂 `conversation.content`） | ⚠ 顶替 |
+| `conversation.session.header` | single / session | client-ui-conversation（经 `conversation.header` 条目） | ⚠ 顶替 |
+| `conversation.session.header.actions` | list / session | client-ui-conversation（经 `conversation.session.header` 条目） | — 追加 |
+| `conversation.session.header.actions.subagent.footer` | list / session | client-ui-subagent（经 `conversation.session.header.actions` 条目） | — 追加 |
+| `conversation.session.header.corner` | single / session | client-ui-conversation（经 `conversation.session.header` 条目） | ⚠ 顶替 |
+| `conversation.session.header.lineage` | single / session | client-ui-conversation（经 `conversation.session.header` 条目） | ⚠ 顶替 |
+| `conversation.session.header.utilities` | list / session | client-ui-conversation（经 `conversation.session.header` 条目） | — 追加 |
+| `conversation.session.header.views.actions` | list / root | client-ui-conversation（经 `conversation.session.header` 条目） | — 追加 |
+| `conversation.trajectory.images` | single / session | client-ui-trajectory（经 `conversation.view` 条目） | ⚠ 顶替 |
+| `conversation.user.text.node` | keyed / session | client-ui-conversation（组件工厂 `conversation.user.text`） | ⚠ 顶替 |
+| `conversation.view` | list / session | client-ui-conversation（经 `conversation.session` 条目） | — 追加 |
 
-### `tool.*`（3）
+### `settings`（14）
 
-| 槽位 | 声明包 |
-|---|---|
-| `tool.call.images` | `dsh-client-ui-attachment`, `dsh-client-ui-tool` |
-| `tool.call.toolview` | `dsh-client-ui-action-cards`, `dsh-client-ui-cordis`, `dsh-client-ui-deliverables`, `dsh-client-ui-skill`, `dsh-client-ui-tool` |
-| `tool.view.cordis` | `dsh-client-ui-cordis` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `settings.action` | list / root | client-ui-settings-general（经 `sidebar.settings` 条目） | — 追加 |
+| `settings.close` | single / root | client-ui-settings-general（经 `sidebar.settings` 条目） | ⚠ 顶替 |
+| `settings.general.item` | list / root | client-ui-settings-general（经 `settings.section` 条目） | — 追加 |
+| `settings.header` | single / root | client-ui-settings-general（经 `sidebar.settings` 条目） | ⚠ 顶替 |
+| `settings.launcher` | single / root | client-ui-settings-general（经 `sidebar.settings` 条目） | ⚠ 顶替 |
+| `settings.launcher.notifications` | single / root | client-ui-settings-account（经 `settings.launcher` 条目） | ⚠ 顶替 |
+| `settings.models.footer` | list / root | client-ui-settings-models（经 `settings.section` 条目） | — 追加 |
+| `settings.models.provider-card` | keyed / root | client-ui-settings-models（经 `settings.section` 条目） | — 追加 |
+| `settings.models.sign-in` | single / root | client-ui-settings-models（经 `settings.onboarding` 条目） | ⚠ 顶替 |
+| `settings.onboarding` | list / root | client-ui-settings-general（经 `sidebar.settings` 条目） | — 追加 |
+| `settings.plugins.tab` | list / root | client-ui-settings-plugins（经 `settings.section` 条目） | — 追加 |
+| `settings.section` | list / root | client-ui-settings-general（经 `sidebar.settings` 条目） | — 追加 |
+| `settings.section.icon` | list / root | client-ui-settings-general（经 `sidebar.settings` 条目） | — 追加 |
+| `settings.trigger` | single / root | client-ui-settings-general（经 `sidebar.settings` 条目） | ⚠ 顶替 |
 
-### `deliverables.*`（2）
+### `plugins`（9）
 
-| 槽位 | 声明包 |
-|---|---|
-| `deliverables.file.actions` | `dsh-client-ui-deliverables`, `dsh-client-ui-open-in-app` |
-| `deliverables.review.file.actions` | `dsh-client-ui-deliverables`, `dsh-client-ui-open-in-app` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `plugins.add.actions` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.bundle.activation` | keyed / root | client-ui-plugin-manager（经 `main` 条目） | ⚠ 顶替 |
+| `plugins.bundle.config` | keyed / root | client-ui-plugin-manager（经 `main` 条目） | ⚠ 顶替 |
+| `plugins.detail.actions` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.detail.badge` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.detail.section` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.item` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.row.config` | keyed / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
+| `plugins.tab` | list / root | client-ui-plugin-manager（经 `main` 条目） | — 追加 |
 
-### `input.*`（1）
+### `contextMenu`（2）
 
-| 槽位 | 声明包 |
-|---|---|
-| `input.file` | `dsh-client-ui-conversation` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `contextMenu.content` | keyed / root | client-ui-context-menu（经 `shell.overlay` 条目） | ⚠ 顶替 |
+| `contextMenu.icon` | keyed / root | client-ui-context-menu（经 `shell.overlay` 条目） | ⚠ 顶替 |
 
-### `workspace.*`（1）
+### `tool`（3）
 
-| 槽位 | 声明包 |
-|---|---|
-| `workspace.toast` | `dsh-client-ui-workspace` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `tool.call.images` | single / session | client-ui-tool（经 `tool.call.toolview` 条目） | ⚠ 顶替 |
+| `tool.call.toolview` | keyed / session | client-ui-tool（经 `conversation.chat.node` 条目） | ⚠ 顶替 |
+| `tool.view.cordis` | keyed / session | client-ui-cordis（经 `tool.call.toolview` 条目） | — 追加 |
 
-### `main.*`（1）
+### `deliverables`（2）
 
-| 槽位 | 声明包 |
-|---|---|
-| `main.conversation` | `dsh-client-ui-conversation` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `deliverables.file.actions` | list / session | client-ui-deliverables（经 `conversation.chat.turnTail` 条目） | — 追加 |
+| `deliverables.review.file.actions` | list / session | client-ui-deliverables（经 `sidebar.right.pane.tab` 条目） | — 追加 |
 
-### `rightbar.*`（1）
+### `workspace`（1）
 
-| 槽位 | 声明包 |
-|---|---|
-| `rightbar.session` | `dsh-client-ui-sidebar-right` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `workspace.toast` | keyed / root | client-ui-workspace（经 `shell.overlay` 条目） | ⚠ 顶替 |
 
-### `command.*`（1）
+### `main`（1）
 
-| 槽位 | 声明包 |
-|---|---|
-| `command.label` | `dsh-client-ui-model-selection` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `main.conversation` | single / session-maybe | client-ui-conversation（经 `main` 条目） | ⚠ 顶替 |
 
-### `remote.*`（3）
+### `rightbar`（1）
 
-| 槽位 | 声明包 |
-|---|---|
-| `remote.actionCards` | `dsh-client-ui-action-cards` |
-| `remote.officeToPdf` | `dsh-client-ui-sidebar-documentpreview` |
-| `remote.pluginRecommendations` | `dsh-client-ui-plugin-recommendations` |
+| 槽位 | 类型 / scope | 声明者 | 风险 |
+|---|---|---|---|
+| `rightbar.session` | single / session | client-ui-sidebar-right（经 `rightbar` 条目） | ⚠ 顶替 |
 
-### `contextMenu.*`（2）
-
-| 槽位 | 声明包 |
-|---|---|
-| `contextMenu.content` | `dsh-client-ui-context-menu`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-workspace` |
-| `contextMenu.icon` | `dsh-client-ui-context-menu`, `dsh-client-ui-file-actions`, `dsh-client-ui-open-in-app`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-workspace` |
-
+> 采集方式：直接解析安装内 `slot-catalog.ts` 的 `CLIENT_SLOT_API`（不是正则扫 bundle）。升级后重新生成，或直接读目录。

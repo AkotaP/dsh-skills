@@ -28,7 +28,10 @@ window.__ModuleLoader__.load({
 })
 ```
 
-- `factory(require)` 里**只能 `require` 模块表里的包**：`react`、`react/jsx-runtime`、`dsh.client.inject` 里声明过的 `@deepseek-ai/dsh-client-*`。**不要**再装一份 React、不要 CDN/UMD。
+- `factory(require)` 里**只能 `require` 模块表里的包**。表分两层：
+  - **基线表（恒在，随 Web 外壳静态提供）**：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`zod`、`@tanstack/react-virtual`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`。直接 require，**不用安装、不要写进 `dependencies`**。
+  - **其余**：要么在 `package.json` 的 `dsh.client.external` 里列成精确模块请求（含 `<pkg>/client` 子路径），由宿主组合进图；要么别 require。解析不到时浏览器侧直接抛错，整个客户端半不加载。
+  **不要**再装一份 React、不要 CDN/UMD。`dsh.client.inject` 只是**包名依赖边**（工厂到达顺序 / 组合），不是服务注入——服务注入写在返回对象的 `inject` 里。
 - factory 里不做事（保持无副作用），一切注册放 `apply(ctx)`。
 - `inject` 声明是**门禁**：cordis 服务查找只沿父链走 + facade 按 `inject` 过滤，**没声明拿到的就是 `undefined`**——表现为"功能看着有、实际不生效"（`configForms` 是典型）。
 
@@ -39,9 +42,40 @@ ctx.slots.inject(ownerKey, () => ctx.slots.register(options, Component))
 ```
 
 - `inject` 的回调在**拥有该槽位的声明塌缩/恢复时重跑**，注册随之销毁/重建——所以把注册写在回调里，不要在外面先建组件再塞。
-- `register` 选项：`name`（槽位名）、`id`（list 槽位**必填**，同槽位内唯一）、`key`（keyed 槽位必填）、`select`（chain 槽位必填）、`order`（越小越前）、`priority`（比较时先于 `order`）、`locale`（该条目的文案命名空间）、`inject: () => props`（额外业务 props）、`scope`（会话作用域槽位由父级声明，组件自动拿到 session 相关标准 props）、`label`（`settings.section` 用）。槽位分 single / list / keyed / chain 四类，缺必填项时报错形如 `… requires options.id | key | select`。
+- `register` 选项：`name`（槽位名）、`id`（list 槽位**必填**，同槽位内唯一）、`key`（keyed 槽位必填）、`select`（chain 槽位必填）、`order`（越小越前）、`priority`（比较时先于 `order`）、`locale`（该条目的文案命名空间）、`inject: () => props`（额外业务 props）、`scope`（会话作用域槽位由父级声明，组件自动拿到 session 相关标准 props）、`label`（`settings.section` 用）。槽位分 **single / list / keyed / chain / hoc** 五类（`hoc` 用于包裹宿主内容，组件必须渲染 `children` 至多一次），缺必填项时报错形如 `… requires options.id | key | select`。`priority` 是内部排序位，官方目录明确建议**不要传**（facade 会自动给一个低于所有内置条目的值）。
 - 声明即占有：注册进**未声明**的槽位（`slot "…" is not declared`）、声明已声明的子槽位、同 `id`/`key` 重复注册——加载期直接 throw。
 - 槽位清单与发现方法见 `slots.md`。
+
+## 右键菜单（`0.2.2-rc.2` 现状）
+
+不要用 Slot 画菜单项了，改用数据贡献（完整契约见 `@deepseek-ai/dsh-client-ui-context-menu/README.zh.md`）：
+
+```js
+const inject = ['contextMenus']
+
+function apply(ctx) {
+  ctx.effect(() => ctx.contextMenus.register({
+    id: 'my-plugin.action',
+    target: 'session',                       // 目标类别，扩展 ContextMenuTargetMap
+    order: 450,
+    resolve: (target, signal) => ({
+      id: 'my-plugin.action.run',
+      label: t('menuLabel'),
+      icon: { key: 'my-plugin.action' },     // 图标是数据，不是 React 节点
+      run: async () => { /* ... */ },
+    }),
+  }), 'my-plugin: context menu')
+
+  // 图标通过 keyed 槽位渲染
+  ctx.slots.inject('contextMenu.icon', () => ctx.slots.register(
+    { name: 'contextMenu.icon', key: 'my-plugin.action' }, Icon,
+  ))
+}
+```
+
+- 服务名是 `ctx.contextMenus`（旧 `ctx.menus` 已删）；类型 `ContextMenuTarget` / `ContextMenuTargetMap`（旧 `MenuTarget` 已删）。
+- 触发元素：`const { getTriggerProps } = useContextMenu()`，把 `getTriggerProps(target, handlers?)` 展开到元素上。
+- 内置会话/标签菜单项也是数据贡献；旧 Slot 的 priority 不再能压过内置动作。
 
 ## 配置 UI 放哪儿（四条路，先选再写）
 
@@ -121,9 +155,9 @@ const primitive = (legacy, current) =>
 
 一个抛异常的组件会把**整个槽位条目**打崩（控制台 `slot entry crashed in '<slot>'`），所以宁可降级成不渲染。
 
-**当前版本的两处硬改动**（旧名没有兼容别名，容错包装也救不了）：右键菜单类型/hook/图标形式见 `version-compat.md` §4.2；`useAnchoredPosition` 与 `Menu.getAnchorRect` 将在后续版本移除，见 §4.5。
+**当前版本的两处硬改动**（旧名没有兼容别名，容错包装也救不了）：右键菜单的类型/hook/**服务名/图标形式**见 `version-compat.md` §4.2；`useAnchoredPosition` 与 `Menu.getAnchorRect` 在 `0.2.2-rc.2` **已经移除**（改 CSS 锚点 / `anchorRef` / `anchorPoint`），见 §4.5。
 
-**关于 `@deepseek-ai/dsh-client-ui-primitives`**：官方 skill 说"不要 require 任何 Harness 客户端包"，那是**保守基线**；真实插件为了和宿主长得一样确实会用它。可接受的折中是：写进 `dsh.client.inject`、**只读导出**、全部走上面的容错包装、升级时把它当"可能改名/可能消失"的东西。若不愿意承担这个耦合，就照官方建议把目标控件的结构/样式抄进自己插件（类名改成自己的前缀）。
+**关于 `@deepseek-ai/dsh-client-ui-primitives`**：它**不是安装内的独立 npm 包**，只是浏览器基线模块表里的一个模块（`dsh-client-ui-slots`、`dsh-client-ui-dockkit` 同理）。因此：require 它不需要安装、也不该写进 `dependencies`；但它**没有 `package.json` / 类型文件可读**，契约只能从模块导出面与官方 README 反推，且跨版本会改名（实测：图标导出换过后缀、`useAnchoredPosition` 在 `0.2.2-rc.2` 被移除）。折中做法：**只读导出**、全部走上面的容错包装、升级时把它当"可能改名/可能消失"的东西；不愿承担耦合就照官方建议，把目标控件的结构/样式抄进自己插件（类名改成自己的前缀）。
 
 ## 不要做的事
 

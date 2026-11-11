@@ -1,4 +1,4 @@
-# 宿主半（`lib/index.js`）
+# 宿主半（`index.js` / `lib/index.js`）
 
 跑在 DSH 宿主进程里的普通 Node ESM。**没有构建步骤、没有 JSX、没有浏览器 API。**
 
@@ -29,11 +29,11 @@ export default class MyService extends Service { /* ... */ }
 ctx.effect(execute, label)
 ```
 
-cordis 4.0.4 语义（读 `cordis/lib/index.js` 确认）：**立即执行** `execute`，收集它返回的 disposer；fiber（插件卸载/重载）销毁时**逆序**执行。也接受 generator / async generator。
+cordis 4.1.0 语义（读 `cordis/src/fiber.ts` 确认）：**立即执行** `execute`，收集它返回的 disposer；fiber（插件卸载/重载）销毁时**逆序**执行（异步 disposer 会被 await）。也接受 Promise、generator / async generator。
 
 - 标签（第二参）会出现在 fiber 诊断里，写上 `'<插件>: <用途>'`。
 - 路由、事件监听、定时器、文件监听、样式标签——**凡"注册"必包**。裸注册会导致热更/卸载后泄漏。
-- `0.2.1+` 的 profile 重组会重新 import 变过的模块：**模块级可变状态（计数器、缓存、单例句柄）会重置**，别把持久状态放在模块顶层；跨重载要保留的放进 `ctx` 服务或存储。
+- `0.2.1-alpha.3+` 的 profile 重组会重新 import 变过的模块：**模块级可变状态（计数器、缓存、单例句柄）会重置**，别把持久状态放在模块顶层；跨重载要保留的放进 `ctx` 服务或存储。
 - 事件监听用 `ctx.on(event, listener)`；两者都返回 disposer。
 
 ## 服务：读什么、怎么读
@@ -46,7 +46,7 @@ const workspaces = ctx.get('workspaceRegistry')
 const agents = ctx.get('agents')
 ```
 
-- 宿主半边**没有** `ctx.get('sessions')` 之外的黑魔法；服务的权威清单见官方 `cordis-composition-reference/references/packages.md`（按 group 列出每个可挂载包及是否吃 `config`）。
+- 宿主半边**没有** `ctx.get('sessions')` 之外的黑魔法；服务的权威清单见官方 `dsh-doc/references/packages.md`（按 group 列出每个可挂载包及是否吃 `config`），运行时用 `cordis_inspect_query` 查 `Service` 最新。
 - 可选服务走 `ctx.inject([...], (ctx) => {...})` 子作用域，避免在缺服务的 profile 里整体不激活。
 - **不要**往 session 里塞新 `type` 的事件：读取端只接受带 `ignorable: true` 的未知事件，而 `Session.append()` 没法写这个标记，会话将无法重新打开。要存自己的状态就用 storage 服务或从已有事件派生。
 
@@ -84,7 +84,7 @@ export const Config = z.object({
 })
 ```
 
-- `.volatile()` 是 **DSH 对 schemastery 的补丁**，只在 `@deepseek-ai/schemastery >= 3.18.3`（当前 3.18.5）里有；**npm 上游裸 `schemastery` 和 3.18.2 都没有**。所以包里要钉 `"@deepseek-ai/schemastery": "^3.18.4"` 到 `dependencies`，并确保它真被装进**插件自己的 `node_modules`**。
+- `.volatile()` 是 **DSH 对 schemastery 的补丁**，只在 `@deepseek-ai/schemastery >= 3.18.3`（当前安装是 `3.19.0`）里有；**npm 上游裸 `schemastery` 和 3.18.2 都没有**。所以包里要钉 `"@deepseek-ai/schemastery": "^3.19.0"` 到 `dependencies`，并确保它真被装进**插件自己的 `node_modules`**。
 - 不标 `.volatile()` → 该字段**连 settings 文档都进不去**，写入直接被拒（`Plugin entry "…" has no volatile fields`）。
 - 非开关类状态（比如"上次勾选了啥"）**别塞 Config**：那属于会话/浏览器状态，应放浏览器 `localStorage`。详见 `config-channel.md`。
 - 一个 `.volatile()` 对象里可以放**任意嵌套结构**（数组、对象、对象数组）：`volatileForm` 会把它整块投影给客户端，`form.set('<key>', 整个对象)` 就是一次合法写入；落盘时 `mergeLayers` 对普通对象深合并、**对数组整体替换**（所以删掉数组里一项能正确生效）。
@@ -94,7 +94,7 @@ export const Config = z.object({
 | 半边 | 解析方式 | 结论 |
 |---|---|---|
 | 宿主半 | Node 原生 ESM：裸包名**只沿模块自己所在目录往上找** | 要 `import` 的包必须写进 `dependencies` 并装进**插件自己的 node_modules**；`@deepseek-ai/*` **不会**从 app.asar 里"顺便"解析到 |
-| 客户端半 | DSH 自己的浏览器模块表（`__ModuleLoader__`） | 只要包名写进 `package.json` 的 `dsh.client.inject`，**不需要安装** |
+| 客户端半 | DSH 自己的浏览器模块表（`__ModuleLoader__`） | 基线表里的模块（react、cordis、ui-slots、ui-primitives…）**不需要安装**；其余模块要写进 `dsh.client.external`（`dsh.client.inject` 只是包依赖边） |
 
 生态惯例：`dependencies` 只放宿主真 `import` 的包；`peerDependencies` 留 `@deepseek-ai/cordis`，其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`（只为类型/文档）；**宿主版本写 `engines.dsh`——DSH 会真实检查，不满足会禁用插件或拒绝安装（`version-compat.md` §5）**。
 

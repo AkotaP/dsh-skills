@@ -1,34 +1,39 @@
 ---
 name: dsh-plugin-development
 description: 开发、修改、安装、调试 DSH（DeepSeek Harness）插件——bundle 清单、多组件打包与展示元信息、宿主半（Node ESM）、客户端 UI 半（浏览器 bundle）、槽位注册、volatile 配置通道、热更新与离线测试。适用于为 Harness 添加页面/面板/按钮/装饰物/工具/MCP，或改动、排查已安装插件。
-whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 cordis-plugin-development 所依赖的 plugin_manager / cordis_inspect_* 在会话中不可用时。
+whenToUse: 需要编写、修改、安装或排查 DSH 插件时；或官方 dsh-doc skill 所依赖的 plugin_manager / cordis_inspect_* 在会话中不可用时。
 ---
 
 # DSH 插件开发（实测版）
 
-本 skill 补官方 `cordis-plugin-development` 的缺口：**官方流程假定 creator mode 工具存在**（`plugin_manager`、`cordis_inspect_*`），但 `ptc`/`standard` preset 并不挂载它们；官方文档中另有若干条命令在 Desktop profile 下实测不可用。
+本 skill 补官方 `dsh-doc` skill 的缺口：**官方流程假定 creator mode 工具存在**（`plugin_manager`、`cordis_inspect_*`），但 `ptc`/`standard` preset 并不挂载它们；官方文档中另有若干条命令在 Desktop profile 下实测不可用。`0.2.2-rc.2` 起官方把四件套 skill 合并成 `dsh-doc`（旧名加载会失败），并把**源码与整套文档随安装发布**——本 skill 的第 §1、§6 与 `paths.md` 已按此重写。
 
-> **版本敏感**：本 skill 当前基线为 **DSH `0.2.2-rc.1`**（客户端槽位 107 个，参考插件 30 条离线测试仍全绿）。**`engines.dsh` 会被真实校验，不满足会禁用插件**；0.2.x 已积累 5 条面向插件的破坏性改动——投影注册句柄化、右键菜单改名、投影 snapshot 范围、Loader 条目树/Include、CSS 锚定菜单，见 `references/version-compat.md` §4。下文标「实测」的结论都绑定该版本，**升级后重新核对，不要照搬**。
+> **版本敏感**：本 skill 当前基线为 **DSH `0.2.2-rc.2`**（客户端槽位 **114** 个，见 `references/slots.md`）。**`engines.dsh` 会被真实校验，不满足会禁用插件**；0.2.x 已积累 7 条面向插件的破坏性改动——投影注册句柄化、右键菜单改名/服务改名、投影 snapshot 范围、Loader 条目树/Include、**CSS 锚定菜单（`0.2.2-rc.2` 起已生效）**、客户端清单 `external`、Plugin Manager `update`，见 `references/version-compat.md` §4。下文标「实测」的结论都绑定该版本，**升级后重新核对，不要照搬**。
+>
+> **`0.2.2-rc.2` 新增的便利**：安装自带了 **334/337 个包的原始 TS 源码**（`src/`，exports 暴露 `./src/*`）和 **整套官方文档**（`$DSH_INSTALL_DIR/docs/`：`user/develop`、`subsystems`、`cookbook`、`cordis-tutorial`、`upgrade-guide`…），还生成了**槽位契约目录** `dsh-cordis-client-runner/src/client/slot-catalog.ts`。查契约先读这些，别再从压缩后的 `lib/*.js` 里猜；定位与读法见 `references/paths.md` §3–§5。
 >
 > **热重载的现状**：`dsh-base` 的 `hmr` 行一直在，默认在有 `profileContext` 时启用（`root: []` 只表示不监听源码文件）。**`0.2.1-alpha.3` 起**它纳入 `recomposeProfile()`：除配置重组外还发布新的运行时解析、替换磁盘上变过的已加载模块——所以装插件、开关插件、改已加载插件（含 link 插件）的宿主半代码都**不需要重启**；例外清单见 `references/install-and-devloop.md` 的「HMR 与重启边界」。
 
-## 0. 先分清四条路
+## 0. 先分清几条路
 
 | 任务 | 走哪条 | 关键代价 |
 |---|---|---|
 | 修改已有插件的配置字段值 | 直接改 profile 的 `cordis.patch.yml` | 属于对 `~/.dsh` 的写入：**需先经用户确认**；保存后由 HMR 重组，即时生效 |
 | 编写新插件 / 改插件代码（默认 preset） | **本文 §2–§3 的手工路线** | 改 `~/.dsh` 三处：**需先经用户确认**；安装与配置改动即时热重组，仅少数情况需重启（§3） |
-| 同上，但会话处于 `cordis` preset（creator mode） | 官方 skill + `plugin_manager` `install_bundle` | 仍需审批，但无需手改 profile |
-| 仅接入 MCP server | 纯配置 bundle（无 JS），见官方 `cordis-plugin-development` skill 的 `cordis-plugin-development/references/mcp-bundle.md` | 同上 |
+| 同上，但会话处于 `cordis` preset（creator mode） | 官方 `dsh-doc` skill + `plugin_manager` `install_bundle` | 仍需审批，但无需手改 profile |
+| 让用户自己装（Desktop） | **设置 → 插件 → 添加插件**，选本地目录；无需 agent 改 `~/.dsh` | 用户点几下，agent 拿不到安装结果 |
+| 非 Desktop profile 的 CLI 路线 | `dsh plugin --profile <name> add <本地目录/包名>`（它维护 bundles 列表并跑 pnpm） | Desktop profile 被 CLI 拒绝（Electron 独占），见 `pitfalls.md` 第 16 条 |
+| 仅接入 MCP server | 纯配置 bundle（无 JS），见 `$DSH_INSTALL_DIR/../dsh-agent-preset/skills/dsh-doc/references/mcp-bundle.md` 与模板 `templates/mcp/` | 同上 |
 
-判断当前会话有没有 creator 工具：查看工具表中是否存在 `plugin_manager` / `cordis_inspect_query`。**有**则优先走官方 skill；**没有**（默认 preset）按本文走。切换方式见 §5。
+判断当前会话有没有 creator 工具：查看工具表中是否存在 `plugin_manager` / `cordis_inspect_query`。**有**则优先走官方 `dsh-doc`；**没有**（默认 preset）按本文走。切换方式见 §5。
 
 ## 1. 事实基线（实测）
 
-- 版本不是常量：按 `references/version-compat.md` §1 读当前安装的 `desktop-runtime.json` 与各包 `package.json`（当前为 DSH `0.2.2-rc.1`、cordis `4.1.0`、schemastery `3.19.0`、Node `v24.21.0`；版本号会漂，以现场 `node_modules` 里的 `package.json` 为准）。
-- shell 中会注入 `DSH_HOME`（数据根目录，默认 `~/.dsh`）、`DSH_PROFILE`（当前 profile 名）、`DSH_PROFILE_DIR`（该 profile 目录）；未设置表示 harness 未以 profile 启动。通用取值方式见 `references/paths.md`。
+- 版本不是常量：按 `references/version-compat.md` §1 读**安装根**（`$DSH_INSTALL_DIR/../../..`，包名 `@deepseek-ai/dsh-desktop-runtime`）的 `desktop-runtime.json` 与各包 `package.json`（当前为 DSH `0.2.2-rc.2`、cordis `4.1.0`、schemastery `3.19.0`、Node `v24.21.0`；版本号会漂，以现场安装为准）。
+- shell 中会注入 `DSH_HOME`（数据根目录，默认 `~/.dsh`）、`DSH_PROFILE`（当前 profile 名）、`DSH_PROFILE_DIR`（该 profile 目录）、`DSH_INSTALL_DIR`（**运行中的 CLI 包目录**，asar 内）与 `DSH_NODE_EXECUTABLE`（运行 harness 的可执行文件；Desktop 下是 Electron 程序本体）。`DSH_PROFILE` 未设置表示 harness 未以 profile 启动。取值与用途见 `references/paths.md` §1。
 - **`dsh --profile desktop --dump-config` 在 Desktop profile 下失败**：`error: profile "desktop" is managed exclusively by the Electron application`。查看合成配置需改用 §5 的方式。
-- 官方包与安装同处一个 asar 归档，**位置随安装目录变化**，不要写死。**只有宿主进程自身的 `fs` 能读取**（例如 `run_code` 里的 `node:fs`）；`rg`/`glob`/`pwsh` 的 `ls`/`cat` 均报 `ENOENT`。定位方式与读取示例见 `references/paths.md`。查 API 优先读包目录下的 `README.md`，其次 `lib/index.js`（部分 build 不含 `lib/types`）。
+- 官方包与安装同处一个 asar 归档，**位置随安装目录变化**，不要写死。`rg`/`glob`/`pwsh` 的 `ls`/`cat` 对 asar 一律 `ENOENT`，能读的三条路：`run_code` 的 `node:fs`、宿主 read 工具、shell 里 `ELECTRON_RUN_AS_NODE=1 $DSH_NODE_EXECUTABLE`（管道被沙箱禁，结果写文件）——见 `references/paths.md` §3。
+- **读一个包的顺序（`0.2.2-rc.2` 起）**：`README.md` → **`src/*.ts`（334/337 个包随安装带原始 TS）** → `lib/index.js`（构建产物，无 sourcemap；约 1/4 的包还带 `lib/types/**/*.d.ts`）。查 API 先读 `src`，比啃压缩产物快得多。
 - 最小插件通常是一个 npm 包，包含两半；一个 bundle 也可组合多个独立插件包（见 §2.6）：
   - **宿主半** `lib/index.js`：普通 Node ESM，运行在 DSH 宿主进程内。
   - **客户端半** `lib/client.js`：浏览器 bundle，形如 `window.__ModuleLoader__.load({ id, factory })`。
@@ -59,16 +64,31 @@ my-plugin/
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./index.js", "./client": "./client.js" },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale", "icon.svg"],
   "engines": { "node": ">=20", "dsh": ">=0.2.2" },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-conversation"] }
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"],
+      "external": ["@deepseek-ai/dsh-client-ui-some-plugin/client"]
+    }
   }
 }
 ```
 
 `engines.dsh` 会被 DSH 真实检查（写了它就只看它，没写才回退看 `@deepseek-ai/dsh*` peer），不满足会禁用插件、拒绝安装；要兼容 `0.2.0` 旧宿主就在 `peerDependencies` 里再写同范围的 `@deepseek-ai/dsh`。详见 `references/version-compat.md` §5。
+
+- **`dsh.client.inject` 是包名依赖边，不是服务注入**：它决定客户端工厂到达顺序与组合；Cordis 服务注入写在客户端插件 `return { inject: [...] }` 里。
+- **`dsh.client.external`** 只列**超出基线模块表**的精确模块请求（含 `<pkg>/client` 子路径）。基线表固定为：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`zod`、`@tanstack/react-virtual`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`——这些不用安装、也不要写进 `dependencies`。
+- **展示元信息**（`0.2.2-rc.2` 的插件页会读）：`./locale/*.json` 里的 `meta.title`、`meta.description`，可选 `meta.detail` 指向详情文档（相对路径，默认上限 1 MiB），图标走 `./icon` 导出（SVG/PNG/JPEG/WebP，≤256 KiB，必须在包内）或 `package.json` 顶层 `icon`。只写 `meta.title` 不写 `description` 会让插件页显示得很空，模板见官方 `dsh-doc/templates/decoration/`。
 
 `cordis.patch.yml`（行 id 必须与客户端 `configForms.get(id)` 一致）：
 
@@ -92,7 +112,7 @@ export function apply(ctx, config) {        // 第二个参数才是配置，不
 }
 ```
 
-`ctx.effect(execute, label)`：立即执行 `execute`，收集其返回的 disposer，fiber 销毁时**逆序**执行（cordis `4.0.4` 源码确认）。所有注册动作（路由、监听、样式、定时器）都应放进 `ctx.effect`。
+`ctx.effect(execute, label)`：立即执行 `execute`，收集其返回的 disposer，fiber 销毁时**逆序**执行（cordis `4.1.0` 的 `src/fiber.ts` 确认；返回单个 disposer、Promise 或（异步）生成器皆可，异步 disposer 会被 await）。所有注册动作（路由、监听、样式、定时器）都应放进 `ctx.effect`。
 
 **读配置只有一条正确路径：`apply(ctx, config)` 的第二个参数。** `ctx.config` 在 handler、事件回调、定时器里读会直接抛 `cannot get property "config" without inject`（cordis 代理要求当前 fiber 上下文）。请求期需要配置时，在 `apply` 里把 `config.<volatileKey>` 这个**引用**缓存下来——它的值本身是 live 的（`ref.get()`）。
 
@@ -138,7 +158,9 @@ window.__ModuleLoader__.load({
 
 ## 3. 装入 profile（手工路线）
 
-**每一步都在写 `~/.dsh`：动手前需取得用户明确同意**——这会改变当前 profile 的插件组成，所有使用该 profile 的会话都受影响；但 HMR 默认启用，装完即时重组，**一般不需要重启**（例外见本节末尾）。共三处 + 一次安装：
+**先找现成入口，别一上来手工改**：有 `plugin_manager` 就走 `action: install_bundle`（`target` = 包目录绝对路径；需要构建脚本时先读 `pendingBuilds`，用户明确同意后才传 `approvedBuilds`）；没有 agent 工具时，Desktop 用户可以走 **设置 → 插件 → 添加插件** 选本地目录；非 Desktop profile 还能 `dsh plugin --profile <name> add <目录或包名>`（它自己维护 bundles 列表并跑 pnpm）。Desktop profile 的 `dsh plugin` 被 CLI 拒绝——那个 profile 由 Electron 独占（同一道校验也拦 `--dump-config`）。
+
+以下是**没有上述入口时**的手工路线。**每一步都在写 `~/.dsh`：动手前需取得用户明确同意**——这会改变当前 profile 的插件组成，所有使用该 profile 的会话都受影响；但 HMR 默认启用，装完即时重组，**一般不需要重启**（例外见本节末尾）。共三处 + 一次安装：
 
 1. profile 的 `package.json`（即 `$DSH_PROFILE_DIR/package.json`）
    - `dependencies` 加 `"<pkg-name>": "link:<插件仓库绝对路径>"`（开发期）或版本号（已发布 npm）
@@ -158,7 +180,7 @@ window.__ModuleLoader__.load({
          config: {}
    ```
 4. **触发热重组**：patch 文件或 bundles 列表的写入会被 HMR 的 profile 监视捕获，宿主半当场 import 并 apply，浏览器侧由 `/plugins/events` 同步。顺序上先 `pnpm install` 再写 bundles/patch；若包还没装好就重组的，会记为 `failed` 并在下一次重组时重试——修改 patch 内容（哪怕只是注释）或再写一次 bundles 列表即可触发。**注意它比对的是内容**（`refresh()` 里 `if (inputs === lastInputs) return`）：只改 mtime / `touch` 文件**不会**触发，必须真的改内容。
-5. 验证：设置 → 插件页的条目与状态（安装类操作看 `application`：`applied` 才是生效，`restart-required` 才算例外）；涉及 UI 时按页面实际表现确认，必要时让用户刷新。
+5. 验证：设置 → 插件页的条目与状态（安装类操作看 `application`：`applied` 才是生效，`restart-required` 才算例外；新装的包还会显示 `meta.title` / `meta.description` / 图标 / 详情文档，缺了就说明展示资源没进 `files` 或 `exports`）；涉及 UI 时按页面实际表现确认，必要时让用户刷新。
    - **没有日志可看时，让插件自己证明**：塞一条只读健康路由（`ctx.get('webServer').register({ kind: 'prefix', path: '/<plugin>/health' })`），返回 `{ loaded: true, configKind, presets… }`。`curl 127.0.0.1:<port>/<plugin>/health` 拿到 200 就是"宿主半真的加载了、配置引用可读"的硬证据。注意 host 半的插件路由默认只对 loopback 开放，未认证也可以打。
 
 回滚：从 `dsh.profile.bundles` 移除 + 删 patch 条目 → `pnpm remove <pkg>`。被丢弃映射下的模块会被驱逐，同样即时生效。
@@ -190,8 +212,9 @@ window.__ModuleLoader__.load({
 |---|---|
 | 当前 profile 装了什么 | 读 `~/.dsh/profiles/desktop/package.json`（`dsh.profile.bundles`）+ `cordis.patch.yml` |
 | 合成后的完整插件树 | Electron 托管的 profile 下没有可用的 dump CLI；改为读各 bundle 的 `cordis.patch.yml`（例如 `@deepseek-ai/dsh-web-app`，包目录定位见 `paths.md` §2）叠加 profile patch，或查看 UI 插件页 |
-| 官方包的 API | asar 路径下该包的 `README.md`（第一权威），其次 `lib/index.js` |
-| 官方 skill 全文 | `.../dsh-agent-preset/skills/cordis-plugin-development/`（用宿主进程的 `fs` 读，不要用 shell） |
+| 官方包的 API | asar 路径下该包的 `README.md`（第一权威）→ `src/*.ts`（`0.2.2-rc.2` 起随安装带源码）→ `lib/index.js` |
+| 官方文档（机制/教程/迁移） | `$DSH_INSTALL_DIR/docs/`：`subsystems/`、`user/develop/`、`cookbook/`、`cordis-tutorial/`、`upgrade-guide/`（见 `paths.md` §5） |
+| 官方 skill 全文 | `$DSH_INSTALL_DIR/../dsh-agent-preset/skills/dsh-doc/`（`references/` + `templates/`；旧名 `cordis-plugin-development` 已不存在） |
 | 切换 creator mode | 改 `agent-preset-registry` 的 `selectedDefault`，或在新建会话时选择 `cordis` preset——它会挂载 `@deepseek-ai/dsh-tool-cordis` + `@deepseek-ai/dsh-plugin-manager/tools` |
 | 插件被禁用 / 安装被拒（版本不兼容） | stderr 的 `disabling profile plugin`、`dsh plugin version-exemptions`、profile 目录的 `compatibility.json`（见 `version-compat.md` §5） |
 
@@ -205,33 +228,40 @@ window.__ModuleLoader__.load({
 | 设置页分区 | `@deepseek-ai/dsh-client-ui-settings-general`、`@deepseek-ai/dsh-client-ui-settings-models` |
 | 侧边栏会话行的按钮与「…」菜单项 | `@deepseek-ai/dsh-client-ui-workspace`、`@deepseek-ai/dsh-client-ui-schedule` |
 | volatile 配置通道的服务端实现 | `@deepseek-ai/dsh-settings`（README + `lib/index.js`） |
-| 槽位注册与渲染契约 | `@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-renderer` |
+| 槽位注册与渲染契约 | `@deepseek-ai/dsh-client-ui-renderer`（渲染绑定）+ `dsh-cordis-client-runner` 的 `src/client/slot-catalog.ts`（槽位契约；`ui-slots` / `ui-primitives` **不是安装内的包**，只在浏览器基线模块表里） |
 | 客户端热更行为 | `@deepseek-ai/dsh-client-hmr`（README） |
+| 槽位契约（kind/必填项/ownerProps/声明者/风险） | `@deepseek-ai/dsh-cordis-client-runner` 的 `src/client/slot-catalog.ts`（生成的 `CLIENT_SLOT_API`） |
+| 客户端清单字段与 `external` 规则 | `@deepseek-ai/dsh-package-manifest` 的 `src/types.ts`、`@deepseek-ai/dsh-client-modules` 的 `src/client/manifest.ts` |
+| 右键菜单贡献与图标 | `@deepseek-ai/dsh-client-ui-context-menu`（README + `src/client/registry.ts`） |
+| 安装/更新/版本豁免 API | `@deepseek-ai/dsh-plugin-manager`（README + `src/tools.ts`、`src/operations.ts`） |
 
-读法：先读该包目录下的 `README.md`（第一权威），再读 `lib/index.js`。第三方插件仓库同样可作样例，但要注意其适配的 harness 版本可能不同。
+读法：先读该包目录下的 `README.md`（第一权威），再读 `src/*.ts`（`0.2.2-rc.2` 起随安装带源码），`lib/index.js` 只在需要确认构建产物行为时看。第三方插件仓库同样可作样例，但要注意其适配的 harness 版本可能不同——`0.2.2-rc.2` 起 CSS 锚点菜单与 `ctx.contextMenus` 已生效，旧样例很可能还停在 `getAnchorRect` / `ctx.menus`。
 
 ## 7. 版本与兼容
 
 harness 迭代很快，任何「实测」结论都会过期。升级前后各做一次 **API 表面快照**并 diff：
 
-```js
-// 在宿主进程内执行（agent 会话里用 run_code）
-// node scripts/api-snapshot.mjs --out before.json
-// …升级…
-// node scripts/api-snapshot.mjs --diff before.json
+```
+# 有宿主进程 fs 时（run_code）直接跑；否则 shell 里用 harness 自带运行时（能读 asar）
+node scripts/api-snapshot.mjs --out before.json
+# …升级…
+node scripts/api-snapshot.mjs --out after.json
+node scripts/api-snapshot.mjs --diff before.json
 ```
 
-输出会列出**包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的三类依赖。完整流程（版本从哪读、官方有无 CHANGELOG、兼容写法、升级后回归清单）见 `references/version-compat.md`。插件声明的宿主版本（`engines.dsh` / peer）会被真实检查；`version-compat.md` §4 列了当前版本已生效的破坏性改动与迁移，§5 讲版本声明与豁免。
+脚本自己会用 `DSH_INSTALL_DIR` 定位安装，**不需要**传路径；shell 下若提示读不到 asar，就按 `paths.md` §3 用 `ELECTRON_RUN_AS_NODE=1 $DSH_NODE_EXECUTABLE` 跑。
+
+输出会列出**包新增/移除、包版本变化、槽位新增/消失、服务新增/消失**——正好是插件最容易被打断的几类依赖。脚本在 `0.2.2-rc.2` 起直接解析安装内的槽位目录，不再正则扫 bundle。完整流程（版本从哪读、随安装发布的升级指南、兼容写法、升级后回归清单）见 `references/version-compat.md`。插件声明的宿主版本（`engines.dsh` / peer）会被真实检查；`version-compat.md` §4 列了当前版本已生效的破坏性改动与迁移，§5 讲版本声明与豁免。
 
 ## Read next
 
 | 主题 | 文件 |
 |---|---|
-| 环境变量、安装目录与包目录的通用定位（不写死路径） | `references/paths.md` |
+| 环境变量（含 `DSH_INSTALL_DIR` / `DSH_NODE_EXECUTABLE`）、asar 读法、**随安装发布的源码与文档** | `references/paths.md` |
 | 宿主半：导出形态、inject 与 ctx.get、Config/volatile、路由、生命周期、错误约定 | `references/host-half.md` |
 | 客户端半：模块格式、slots 注册、**配置 UI 放哪儿（设置分区 / 插件页四槽位）**、locale、CSS、热更、版本容错 | `references/client-half.md` |
 | 多组件独立开关、具名子包、展示元信息、发布包验收及平滑升级 | [multi-components.md](references/multi-components.md) |
-| 真实槽位清单（实测 107 个，含声明包）与发现方法 | `references/slots.md` |
+| 槽位清单（`0.2.2-rc.2` 共 114 个，含 kind/声明者/替换风险）与权威目录用法 | `references/slots.md` |
 | volatile 配置通道：宿主 schema + 客户端 configForms 读写与报错 | `references/config-channel.md` |
 | 两条安装路线、依赖解析不对称、HMR 与何时需要重启、发版、回滚 | `references/install-and-devloop.md` |
 | 离线测试 harness 的写法、断言范围、沙箱下的跑法 | `references/testing.md` |

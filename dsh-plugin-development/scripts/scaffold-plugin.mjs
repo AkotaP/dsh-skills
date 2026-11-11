@@ -9,7 +9,7 @@
  *                            [--slot conversation.composer.dock] [--label "My Widget"] [--force]
  */
 import { mkdirSync, writeFileSync, readdirSync, existsSync, statSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 const argv = process.argv.slice(2)
 if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) {
@@ -55,15 +55,26 @@ const files = {
     private: true,
     type: 'module',
     description: label + ' — DSH plugin',
-    exports: { '.': './index.js', './client': './client.js', './package.json': './package.json' },
-    engines: { node: '>=20', dsh: '>=0.2.1-rc.2' },
+    exports: {
+      '.': './index.js',
+      './client': './client.js',
+      './locale/*.json': './locale/*.json',
+      './package.json': './package.json',
+    },
+    files: ['index.js', 'client.js', 'cordis.patch.yml', 'locale'],
+    engines: { node: '>=20', dsh: '>=0.2.2' },
     scripts: { test: 'node --test --test-isolation=none' },
     dsh: {
       bundle: { patch: './cordis.patch.yml' },
+      // inject = 包名依赖边（不是服务注入）；非基线模块用 external 声明。
       client: { platform: 'web', immediately: true, inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
     },
-    peerDependencies: { '@deepseek-ai/dsh': '>=0.2.1-rc.2', '@deepseek-ai/cordis': '^4.0.5' },
+    peerDependencies: { '@deepseek-ai/dsh': '>=0.2.2', '@deepseek-ai/cordis': '^4.1.0' },
   }, null, 2) + '\n',
+
+  // 插件页展示元信息：title / description（可加 detail 指向详情文档）。缺 description 会显示得很空。
+  'locale/en.json': JSON.stringify({ meta: { title: label, description: label + ' for DSH.' } }, null, 2) + '\n',
+  'locale/zh.json': JSON.stringify({ meta: { title: label, description: label + '（DSH 插件）。' } }, null, 2) + '\n',
 
   'cordis.patch.yml':
     '# 行 id 必须与客户端 configForms.get(id) / 本文件保持一致。\n' +
@@ -149,14 +160,18 @@ DSH 插件（${pkgName}）。
 `,
 }
 
-for (const [rel, content] of Object.entries(files)) writeFileSync(join(target, rel), content, 'utf8')
+for (const [rel, content] of Object.entries(files)) {
+  const file = join(target, rel)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, content, 'utf8')
+}
 
 console.log('✔ 已生成 ' + target)
 for (const rel of Object.keys(files)) console.log('  · ' + rel)
 console.log(`
-下一步（安装会改 ~/.dsh 并需要重启 DSH —— 需先取得用户同意）：
-  1. 在插件目录跑 pnpm install（宿主半的依赖要装进这里）
-  2. node scaffold-plugin.mjs 生成的骨架可先做语法检查： node --check index.js && node --check client.js
-  3. profile 安装见 skill references/install-and-devloop.md §B
+下一步（安装会改 ~/.dsh —— 需先取得用户同意；HMR 默认启用，装完通常不用重启）：
+  1. 先做语法检查： node --check index.js && node --check client.js
+  2. 有 plugin_manager 就 install_bundle；没有的话，Desktop 用户在「设置 → 插件 → 添加插件」选这个目录
+  3. 手工 link 路线见 skill references/install-and-devloop.md §B（宿主半依赖要装进插件自己的 node_modules）
 验证：node --test --test-isolation=none（沙箱下必须带这个参数）
 `)

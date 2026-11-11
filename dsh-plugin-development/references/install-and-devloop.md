@@ -17,6 +17,8 @@
 
 ### B. 手工 link 路线——默认 preset（无 creator 工具）下唯一可用
 
+> 有 CLI 的场合，优先用 `dsh plugin --profile <name> add <本地目录|包名>`：它把依赖装进 profile、同步 `dsh.profile.bundles`、并触发热重组，比手写 profile 稳。**Desktop profile 例外**：`dsh plugin --profile desktop …` 会被 CLI 拒绝（`profile "desktop" is managed exclusively by the Electron application`），那个 profile 只能由 Electron 管理——用插件页或 `plugin_manager`。
+
 **三处改 `~/.dsh` + 一次 pnpm。动手前需取得用户明确同意**（改的是整个 profile 的插件组成；HMR 默认启用，改完即时重组，通常不用重启）。
 
 ```powershell
@@ -50,11 +52,12 @@ $repo       = "<插件仓库绝对路径>"
 | 半边 | 解析方式 | 结论 |
 |---|---|---|
 | 宿主半 | Node 原生 ESM，裸包名只沿**模块自己所在目录**往上找 | `import` 的包必须进 `dependencies` 且装在**插件自己的 node_modules**；`@deepseek-ai/*` 不会从 app.asar 里解析到 |
-| 客户端半 | DSH 浏览器模块表 `__ModuleLoader__` | 包名写进 `dsh.client.inject` 即可，**不需要安装** |
+| 客户端半 | DSH 浏览器模块表 `__ModuleLoader__` | **基线表**（react、cordis、zod、ui-slots、ui-primitives、dockkit、client-store…）不需要安装；其余模块写进 `dsh.client.external`。`dsh.client.inject` 只是包依赖边 |
 
 - `dsh-app-boot` 的 `bareModuleBaseUrl` 只特判 **cordis 条目名**从哪加载，**不管条目内部的 import**。
 - 链接安装下，仓库里的 `node_modules` 就是宿主解析用的那份；所以 `pnpm install` 要在**插件仓库**里也跑一次。
 - **`engines.dsh` / `@deepseek-ai/dsh*` peer 不是纯声明**：DSH 会真实检查（写了 `engines.dsh` 就只看它，没写才回退看 peer），不满足时**安装被拒、启动时插件被禁用**。写法与豁免见 `version-compat.md` §5。
+- **基线模块表**（`0.2.2-rc.2` 实测）：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`zod`、`@tanstack/react-virtual`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`。这些在 `node_modules` 里**找不到对应包**是正常的（它们由 Web 外壳静态提供）。
 
 生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；**宿主版本声明用 `engines.dsh`**；要兼容 `0.2.0` 旧宿主，再在 `peerDependencies["@deepseek-ai/dsh"]` 留同范围作回退。
 
