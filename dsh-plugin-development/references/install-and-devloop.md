@@ -57,7 +57,7 @@ $repo       = "<插件仓库绝对路径>"
 - `dsh-app-boot` 的 `bareModuleBaseUrl` 只特判 **cordis 条目名**从哪加载，**不管条目内部的 import**。
 - 链接安装下，仓库里的 `node_modules` 就是宿主解析用的那份；所以 `pnpm install` 要在**插件仓库**里也跑一次。
 - **`engines.dsh` / `@deepseek-ai/dsh*` peer 不是纯声明**：DSH 会真实检查（写了 `engines.dsh` 就只看它，没写才回退看 peer），不满足时**安装被拒、启动时插件被禁用**。写法与豁免见 `version-compat.md` §5。
-- **基线模块表**（`0.2.2-rc.2` 实测）：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`zod`、`@tanstack/react-virtual`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`。这些在 `node_modules` 里**找不到对应包**是正常的（它们由 Web 外壳静态提供）。
+- **基线模块表**（`0.2.2-rc.3` 实测，rc.2 起未变）：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`zod`、`@tanstack/react-virtual`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`。这些在 `node_modules` 里**找不到对应包**是正常的（它们由 Web 外壳静态提供）。
 
 生态惯例：`dependencies` = 宿主真 import 的（如 `@deepseek-ai/schemastery`）；`peerDependencies` = `@deepseek-ai/cordis`；其余 DSH 包进 `peerDependencies` + `peerDependenciesMeta.optional`；**宿主版本声明用 `engines.dsh`**；要兼容 `0.2.0` 旧宿主，再在 `peerDependencies["@deepseek-ai/dsh"]` 留同范围作回退。
 
@@ -66,7 +66,7 @@ $repo       = "<插件仓库绝对路径>"
 | 改了 | 生效方式 |
 |---|---|
 | `lib/client.js`（客户端半） | `dsh-client-hmr` 轮询入口产物（默认 `pollIntervalMs: 500`）发现 mtime/ctime/size 变化 → 重载该插件 bundle，**页面不用手动刷新**。React 状态会丢，数据层（会话/连接）保留。失败**不回滚**，会出现在插件列表里可重试。 |
-| `lib/index.js`（宿主半） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入**内容**变化——改 profile patch 的内容（不是 touch）、改 bundles 列表、插件页开关/安装。**不需要重启，也不需要额外挂 `dsh-hmr`**。 |
+| `lib/index.js`（宿主半） | 下次**重组**时替换：比较 profile 目录与其 link 目标下已加载模块的 inode/size/mtime，驱逐变了的模块、停掉受影响的 Loader 条目、按磁盘当前内容重新 import。触发方式是任一监视输入**内容**变化——跑 `scripts/refresh-hmr.mjs`（改 profile patch 的标记注释）、改 bundles 列表、插件页开关/安装；**不是 touch**。不需要重启，也不需要额外挂 `dsh-hmr`。 |
 | `cordis.patch.yml` 的 `config` | 保存即热重组（HMR 默认开）；设置页写入同样即时。 |
 | 源码检出（`packages/*`） | `pnpm run dev:web` 同时起宿主 + 重建 watcher；`--no-serve` 只挂 watcher 到别处起的宿主。 |
 
@@ -80,6 +80,41 @@ $repo       = "<插件仓库绝对路径>"
 ```
 
 **"改完 host 没观测到重组就说已生效"是最常见的假报告**——看插件页状态、宿主日志的 `restart required: <reason>` 与 `changed modules keep running their previous code` 警告，或直接打路由。
+
+### 主动触发：固定格式注释（改完宿主半的标准动作）
+
+默认 profile 的 hmr 行是 `config: { root: [] }`——**profile 配置热重载，模块源码不监听**。所以改完插件宿主半（`index.js` / 编译产出的 `lib/index.js`）不会有任何反应，必须人为制造一次「profile 输入内容变化」。
+
+约定：在 profile 的 `cordis.patch.yml` 里维护**一行固定格式注释**，只改时间戳：
+
+```yaml
+# dsh-hmr-refresh: 2026-11-16T23:20:01.234+08:00
+```
+
+- 注释不参与 patch 语义，不会覆盖任何条目，也不影响用户自己写的 `insert` / 覆盖行；
+- 触发依据是**文件内容**比较（`refresh()` 里 `inputs === lastInputs` 直接 return），所以只改时间戳就够，`touch` / 改 mtime 不算；
+- 同一文件里只保留一行标记（脚本会替换而不是追加），文件不会越写越长。
+
+脚本（`scripts/refresh-hmr.mjs`）：
+
+```powershell
+node <skill>/scripts/refresh-hmr.mjs             # 改写 $DSH_PROFILE_DIR/cordis.patch.yml 的标记行
+node <skill>/scripts/refresh-hmr.mjs --dry-run   # 只显示要写什么，不落盘
+node <skill>/scripts/refresh-hmr.mjs --print     # 打印当前标记行
+node <skill>/scripts/refresh-hmr.mjs --file <patch.yml>        # 指定文件
+node <skill>/scripts/refresh-hmr.mjs --profile-dir <profileDir> # 指定 profile
+```
+
+行为细节：
+
+- 定位顺序 `--file` → `--profile-dir` → `$DSH_PROFILE_DIR` → `$DSH_HOME/profiles/$DSH_PROFILE`；
+- patch 不存在时创建为 `[]` + 标记行（空 patch 等价于无操作，安全）；
+- 只替换匹配 `^# dsh-hmr-refresh:` 的那一行，其余字节原样保留；
+- 写入 `~/.dsh` 属于对 profile 的修改：**先直接尝试；被拒就带一次提权重试**（`danger-full-access`，审批里说明「只写 profile patch 的标记行」）——**不要把这件事丢给用户**。只有提权也被拒、或会话没有审批通道时，才请用户代跑，或改走插件页开关/重装（`plugin_manager` 的 apply 路径内部会调 `hmr.reconcileProfile()`）。不要先征询「要不要触发」，这一步是改插件流程的一部分。
+
+触发之后：等 HMR debounce（默认 100ms）+ 重组耗时，再按 `SKILL.md` §4 验证——插件页该行状态、`restart required: <reason>` / `changed modules keep running their previous code` 警告、健康路由回 200。该行变 `failed` 表示新代码 import 失败：先修代码，再跑一次脚本重试。
+
+**不要**为了制造变化去改 patch 的真实字段——那会顺带改变插件行为；也**不要**在宿主半没改的情况下反复触发（每次重组都会停掉相关条目再起来，属于无谓抖动）。
 
 ### HMR 行的现状
 

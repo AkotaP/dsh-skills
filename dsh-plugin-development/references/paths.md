@@ -1,6 +1,6 @@
 # 路径与运行时发现（不写死绝对路径）
 
-插件、脚本与排查步骤都必须适配任意安装位置。本文所有写法与机器、盘符、安装目录无关。基线：**DSH `0.2.2-rc.2`**（Desktop / Windows 实测，取值随版本漂）。
+插件、脚本与排查步骤都必须适配任意安装位置。本文所有写法与机器、盘符、安装目录无关。基线：**DSH `0.2.2-rc.3`**（Desktop / Windows 实测，取值随版本漂）。
 
 ## 1. DSH 注入的环境变量
 
@@ -69,7 +69,7 @@ asar 是 Electron 的虚拟归档，**普通 shell 工具看不见它**：`rg`�
 
 **`README.md`（同目录的 `README.zh.md` 是中文版）→ `src/*.ts` → `lib/index.js` → `docs/`。**
 
-- **`src/` 现在基本都有**：`0.2.2-rc.2` 的 337 个包里 334 个带原始 TS 源码（只有 `dsh-desktop-host`、`libreoffice-kit*` 没有），并在 `exports` 里暴露 `"./src/*"`。`lib/` 只剩压缩后的 `index.js` / `client.js`。
+- **`src/` 现在基本都有**：`0.2.2-rc.3` 的 338 个包里 335 个带原始 TS 源码（只有 `dsh-desktop-host`、`libreoffice-kit*` 没有），并在 `exports` 里暴露 `"./src/*"`。`lib/` 只剩压缩后的 `index.js` / `client.js`。
 - `src` 是**原始 TS**（类型、JSDoc、模块头注释都在），读契约比啃打包产物省事；import 里写的是 `./foo.ts` 这种带扩展名的形式，找依赖按 `.ts` 找。
 - **类型声明不全**：约 1/4 的包带 `lib/types/**/*.d.ts`（client 系较多），其余没有；`package.json` 的 `types` 字段指向的是仓库构建产物，别拿"文件不存在"当包坏了。
 - 安装内**没有 sourcemap**（`lib/*.js.map` 没随安装发布）。

@@ -17,7 +17,7 @@
 8. **样式"只插一次"**（先查 head 里有没有再插）→ 热更后旧 `<style>` 还在，新 CSS 永远不生效，改颜色看着像没做。正确做法：**每次加载先删同名旧标签再插**。
 9. **弹窗挂在会卸载的容器里**（比如「…」菜单内部）→ `setMenuOpen(false)` 与 `setOpen(true)` 同批处理后一起消失，表现为**"点了没反应"**。弹窗放 `shell.overlay`。
 10. **`dsh-client-hmr` 重载会清掉旧 fiber 的样式、且失败不回滚** → 不要依赖"上次注入的东西还在"；重载后新 bundle 必须能自己重建全部资源。
-11. **改完宿主半没观测到重组结果就宣称生效** → 假报告。`0.2.1+` 的重组会替换已加载模块，但触发点是监视输入（patch 内容、`dsh.profile.bundles` 列表、插件页操作），**改文件本身默认不触发**（`root: []`）。`refresh()` 比对的是 `[bundles 列表, patch 文件内容]` 这串字符串：**只改 mtime / `touch` 无效**，必须真的改内容。以前的坑是"忘了重启"，现在是"以为文件改完就自动生效"——两者都是没看状态就下结论。
+11. **改完宿主半没观测到重组结果就宣称生效** → 假报告。`0.2.1+` 的重组会替换已加载模块，但触发点是监视输入（patch 内容、`dsh.profile.bundles` 列表、插件页操作），**改文件本身默认不触发**（`root: []`）。`refresh()` 比对的是 `[bundles 列表, patch 文件内容]` 这串字符串：**只改 mtime / `touch` 无效**，必须真的改内容。标准做法是跑 `scripts/refresh-hmr.mjs` 改写 `# dsh-hmr-refresh: <时间戳>` 那一行（见 `install-and-devloop.md` 的「主动触发」）。以前的坑是"忘了重启"，现在是"以为文件改完就自动生效"——两者都是没看状态就下结论。
 
 ## 权限与状态
 
@@ -63,3 +63,4 @@
 36. **还在用 `useAnchoredPosition` / `Menu.getAnchorRect` / `ctx.menus` / `MenuTarget`** → `0.2.2-rc.2` 已全部删除（不是弃用）。表现为 `undefined is not a function`、菜单错位或干脆不出现。改用 CSS 锚点 / `anchorRef` / `anchorPoint`、`ctx.contextMenus`、`ContextMenuTarget*`，见 `version-compat.md` §4.2 / §4.5。
 37. **在 shell 里用管道抓子进程输出**（`$out = & $exe ...`、`Start-Process -RedirectStandardOutput` 到管道）→ 沙箱拒命名管道：`Access to the path '\\.\pipe\...' is denied` / `EPERM`。让子进程把结果**写文件**再 `Get-Content`；`node --test` 同理加 `--test-isolation=none`。
 38. **拿旧版槽位清单当全集** → `0.2.2-rc.1 → rc.2` 就消失了 `command.label`、`input.file`、`remote.*` 五个名字（注册即 throw），区域级 `root`/`main`/`sidebar`/`rightbar` 又是老扫描漏掉的。查槽位以安装内 `slot-catalog.ts` 为准，见 `slots.md` §0。
+39. **为了触发重组去改 patch 的真实字段**（塞一个假配置、删一行再写回）→ 顺带改了插件行为，排查时还以为是自己代码的问题。触发只用固定注释标记；`dsh-hmr-refresh` 这一行之外一个字节都不要动，也不要为触发而反复重跑（每次重组都会停掉相关条目再起）。

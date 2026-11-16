@@ -9,9 +9,9 @@
 - 文件：`<安装>/node_modules/@deepseek-ai/dsh-cordis-client-runner/src/client/slot-catalog.ts`（导出 `CLIENT_SLOT_API`；`lib/client.js` 里是同一份数据）。由 `scripts/gen-client-catalog.ts` 生成、由 doc-sync 的 `verify-client-catalog` 把关，因此与当前 bundle 的编译期契约一致。
 - 每条给出：`key`、`kind`（`single` / `list` / `keyed` / `chain` / `hoc`）、`scope`（`root` / `session` / `session-maybe`）、`registerOptions`（含 `required` / `optional`）、`ownerProps`、`standardProps`、`keyDomain`、`hookContext`、`slotInject`、`declaredBy`、`occupants`、`replaceRisk`、`example`、`source`。
 - 运行时等价物：creator mode 的 `cordis_inspect_query`（`what:"client"`）返回的就是这份目录——**有 inspect 用 inspect，没有就读上面那个文件**。
-- 读取方式：`run_code` 里直接 `fs.readFileSync`（asar 可读），或用 shell 的 `ELECTRON_RUN_AS_NODE=1` + `$DSH_NODE_EXECUTABLE` 跑脚本（见 `paths.md` §3）。整份约 5800 行，**不要整读**：按 `key: '<槽位名>'` 定位，再读同一条目里的字段。
+- 读取方式：`run_code` 里直接 `fs.readFileSync`（asar 可读），或用 shell 的 `ELECTRON_RUN_AS_NODE=1` + `$DSH_NODE_EXECUTABLE` 跑脚本（见 `paths.md` §3）。整份 5000+ 行，**不要整读**：按 `key: '<槽位名>'` 定位，再读同一条目里的字段。
 
-第 5 节的清单是这份目录在 `0.2.2-rc.2` 的静态抄本（114 条），用于快速检索；**升级后以目录为准**。
+第 5 节的清单是这份目录在 `0.2.2-rc.3` 的静态抄本（116 条），用于快速检索；**升级后以目录为准**。
 
 ## 1. 用目录回答四个问题
 
@@ -26,6 +26,7 @@
 
 - **选本来就分配了空间的槽位**（`conversation.composer.dock`、`settings.section`、`shell.overlay`…），不要用绝对定位压在宿主控件上。官方 UI 插件模板默认就用 `conversation.composer.dock`。
 - **看 `replaceRisk`**：`shadows-shipped-ui` 表示注册即**顶替**宿主现有 UI（`root`、`main`、`sidebar`、`rightbar` 这类区域级 single/keyed 槽位尤其如此）；除非你就是要替换，否则选 `none`（追加）的 list / hoc / chain 槽位。
+- `hoc` 槽位（`conversation.hero.frame`、`conversation.chat.markdown.fence`、`sidebar.session.action`）收到 `children`，必须原样渲染至多一次；什么都不加就 `return children`。
 - `keyed` 槽位先看 `keyDomain`：已占用的 key 会被你的注册替换，别误占官方 key。
 - 不要读其他插件的 DOM/样式表来猜位置。
 - 需要浮层（弹窗/提示）时用 `shell.overlay`（frame 级），**不要**挂在会卸载的容器里。
@@ -42,17 +43,19 @@
 | 会话标题栏按钮 | `conversation.session.header.actions` | `id` + `order` |
 | 输入框下方装饰 | `conversation.composer.dock` | `id` + `order` |
 | 用户消息前的装饰 | `conversation.chat.user.before`（chain） | `select` + `id` |
+| 「新建会话」行内容的包裹层 | `sidebar.session.action`（hoc） | `id` |
 | 确认弹窗 | `shell.overlay` | `id` + `order` |
 | 右键菜单**数据项** | 不用槽位，改用 `ctx.contextMenus.register`（见 `client-half.md`） | — |
 | 右键菜单图标 | `contextMenu.icon`（keyed） | `key` = 动作的 icon key |
 
-## 4. 相对 `0.2.2-rc.1` 清单的差异
+## 4. 版本差异（以安装内目录为准）
 
-**新增 12 条**：`conversation.chat.markdown.fence`、`conversation.chat.user.before`、`conversation.hero.frame`、`conversation.input.model.options`、`conversation.session.header.actions.subagent.footer`、`settings.launcher.notifications`、`sidebar.right.tab.document.office.pdf`、`sidebar.right.tab.guide`，以及区域级 `root` / `main` / `sidebar` / `rightbar`（旧清单靠正则扫 bundle，把单词形式的槽位漏了）。
+| 版本区间 | 变化 |
+|---|---|
+| `0.2.2-rc.1 → 0.2.2-rc.2` | 新增 12 条：`conversation.chat.markdown.fence`、`conversation.chat.user.before`、`conversation.hero.frame`、`conversation.input.model.options`、`conversation.session.header.actions.subagent.footer`、`settings.launcher.notifications`、`sidebar.right.tab.document.office.pdf`、`sidebar.right.tab.guide`，以及区域级 `root` / `main` / `sidebar` / `rightbar`（旧清单靠正则扫 bundle，把单词形式的槽位漏了）；消失 5 条：`command.label`、`input.file`、`remote.actionCards`、`remote.officeToPdf`、`remote.pluginRecommendations` |
+| `0.2.2-rc.2 → 0.2.2-rc.3` | **新增 2 条、无消失**：`sidebar.session.action`（hoc，包裹「新建会话」行内容，由 `client-ui-sidebar` 声明）、`workspace.picker.directoryFlow`（single，`workspace.picker` 工厂下的目录选择洞，由 `directory-picker-*` 填充） |
 
-**消失 5 条**：`command.label`、`input.file`、`remote.actionCards`、`remote.officeToPdf`、`remote.pluginRecommendations`——用这些名字的插件现在注册会直接 throw。
-
-## 5. 清单（`0.2.2-rc.2`，114 条）
+## 5. 清单（`0.2.2-rc.3`，116 条）
 
 | 标记 | 含义 |
 |---|---|
@@ -78,7 +81,7 @@
 | `shell.overlay` | list / root | client-ui-layout（经 `root` 条目） | — 追加 |
 | `shell.quota-notice` | chain / root | client-ui-chat（经 `shell.overlay` 条目） | — 追加 |
 
-### `sidebar`（27）
+### `sidebar`（28）
 
 | 槽位 | 类型 / scope | 声明者 | 风险 |
 |---|---|---|---|
@@ -100,6 +103,7 @@
 | `sidebar.right.tab.guide.actions` | list / root | client-ui-sidebar-right（经 `sidebar.right.pane.tab` 条目） | — 追加 |
 | `sidebar.right.tab.guide.entry` | keyed / session | client-ui-sidebar-right（经 `sidebar.right.pane.tab` 条目） | — 追加 |
 | `sidebar.right.tab.menu.item` | list / session | client-ui-sidebar-right（经 `contextMenu.content` 条目） | — 追加 |
+| `sidebar.session.action` | hoc / root | client-ui-sidebar（经 `sidebar` 条目） | ~ 包裹 |
 | `sidebar.session.row.hover` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
 | `sidebar.session.row.leading` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
 | `sidebar.session.row.trailing` | list / root | client-ui-workspace（经 `sidebar.workspaces` 条目） | — 追加 |
@@ -216,10 +220,11 @@
 | `deliverables.file.actions` | list / session | client-ui-deliverables（经 `conversation.chat.turnTail` 条目） | — 追加 |
 | `deliverables.review.file.actions` | list / session | client-ui-deliverables（经 `sidebar.right.pane.tab` 条目） | — 追加 |
 
-### `workspace`（1）
+### `workspace`（2）
 
 | 槽位 | 类型 / scope | 声明者 | 风险 |
 |---|---|---|---|
+| `workspace.picker.directoryFlow` | single / root | client-ui-workspace（组件工厂 `workspace.picker`） | ⚠ 顶替 |
 | `workspace.toast` | keyed / root | client-ui-workspace（经 `shell.overlay` 条目） | ⚠ 顶替 |
 
 ### `main`（1）
